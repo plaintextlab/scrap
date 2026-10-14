@@ -1,35 +1,44 @@
 package dev.plaintextlab.scrap.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SearchBar
-import androidx.compose.material3.SearchBarDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -38,6 +47,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.plaintextlab.scrap.Screen
@@ -45,10 +55,10 @@ import dev.plaintextlab.scrap.VaultViewModel
 import dev.plaintextlab.scrap.parentOf
 
 /**
- * Search across note names and contents, shown over the notes list. Results update on
- * every keystroke; with an empty query it lists recently edited notes.
+ * Search across note names and contents: a floating card over the dimmed notes list,
+ * with results dropping down under the search field. Results update on every keystroke;
+ * with an empty query it lists recently edited notes. Tapping outside closes it.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchOverlay(vm: VaultViewModel) {
     val query = vm.searchQuery
@@ -71,59 +81,102 @@ fun SearchOverlay(vm: VaultViewModel) {
         vm.navigate(Screen.Note(rel))
     }
 
-    SearchBar(
-        inputField = {
-            SearchBarDefaults.InputField(
-                query = query,
-                onQueryChange = vm::updateSearch,
-                onSearch = { keyboard?.hide() },
-                expanded = true,
-                onExpandedChange = { if (!it) vm.closeSearch() },
-                placeholder = { Text("Search notes") },
-                leadingIcon = {
-                    IconButton(onClick = { vm.closeSearch() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close search")
-                    }
+    Box(Modifier.fillMaxSize()) {
+        // Scrim over the notes list; tapping it closes search.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.4f))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                    vm.closeSearch()
                 },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = {
-                            vm.updateSearch("")
-                            focus.requestFocus()
-                        }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear")
-                        }
-                    }
-                },
-                modifier = Modifier.focusRequester(focus),
-            )
-        },
-        expanded = true,
-        onExpandedChange = { if (!it) vm.closeSearch() },
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        val hits = vm.searchHits
-        val list = Modifier.fillMaxSize().imePadding().nestedScroll(hideKeyboardOnScroll)
-        when {
-            query.isBlank() -> {
-                val recent = remember(vm.notes) { vm.notes.sortedByDescending { it.modified }.take(12) }
-                LazyColumn(list) {
-                    if (recent.isNotEmpty()) item { SectionLabel("Recent") }
-                    items(recent, key = { it.rel }) { n ->
-                        ResultRow(n.name, parentOf(n.rel), null, "") { open(n.rel) }
-                    }
+        )
+        Column(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shadowElevation = 8.dp,
+                modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+            ) {
+                Column {
+                    TextField(
+                        value = query,
+                        onValueChange = vm::updateSearch,
+                        placeholder = { Text("Search notes") },
+                        singleLine = true,
+                        leadingIcon = {
+                            IconButton(onClick = { vm.closeSearch() }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close search")
+                            }
+                        },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = {
+                                    vm.updateSearch("")
+                                    focus.requestFocus()
+                                }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear")
+                                }
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                        ),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).focusRequester(focus),
+                    )
+                    Results(
+                        vm = vm,
+                        modifier = Modifier.weight(1f, fill = false).nestedScroll(hideKeyboardOnScroll),
+                        onOpen = ::open,
+                    )
                 }
             }
-            hits.isEmpty() && vm.searchedFor == query -> Box(list.padding(32.dp), contentAlignment = Alignment.TopCenter) {
-                Text(
-                    "No notes match “${query.trim()}”",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        }
+    }
+}
+
+@Composable
+private fun Results(vm: VaultViewModel, modifier: Modifier, onOpen: (String) -> Unit) {
+    val query = vm.searchQuery
+    val hits = vm.searchHits
+    when {
+        query.isBlank() -> {
+            val recent = remember(vm.notes) { vm.notes.sortedByDescending { it.modified }.take(12) }
+            if (recent.isEmpty()) return
+            HorizontalDivider()
+            LazyColumn(modifier) {
+                item { SectionLabel("Recent") }
+                items(recent, key = { it.rel }) { n ->
+                    ResultRow(n.name, parentOf(n.rel), null, "") { onOpen(n.rel) }
+                }
             }
-            else -> LazyColumn(list) {
+        }
+        hits.isEmpty() && vm.searchedFor == query -> {
+            HorizontalDivider()
+            Text(
+                "No notes match “${query.trim()}”",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
+            )
+        }
+        hits.isNotEmpty() -> {
+            HorizontalDivider()
+            LazyColumn(modifier) {
                 itemsIndexed(hits, key = { i, h -> "$i:${h.rel}" }) { _, hit ->
-                    ResultRow(hit.name, parentOf(hit.rel), hit.text, query) { open(hit.rel) }
+                    ResultRow(hit.name, parentOf(hit.rel), hit.text, query) { onOpen(hit.rel) }
                 }
             }
         }
@@ -141,7 +194,7 @@ private fun ResultRow(name: String, folder: String, text: String?, query: String
             Text(highlight(text, query), maxLines = 2, overflow = TextOverflow.Ellipsis)
         }),
         leadingContent = { Icon(ScrapIcons.Note, contentDescription = null) },
-        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
     )
 }
