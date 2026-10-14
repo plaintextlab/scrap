@@ -327,6 +327,51 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
         onScreenChanged()
     }
 
+    // ---- Trash ------------------------------------------------------------
+
+    var trash by mutableStateOf(emptyList<TrashItem>())
+        private set
+
+    fun loadTrash() = launch {
+        val a = JSONArray(io { Core.trash() })
+        trash = a.map {
+            a.getJSONObject(it).let { o ->
+                TrashItem(o.getString("name"), o.getString("original"), o.getBoolean("dir"), o.optLong("deleted"))
+            }
+        }
+    }
+
+    fun restore(item: TrashItem) = launch {
+        val rel = io { Core.restore(item.name) }
+        unsynced = true
+        reload()
+        loadTrash()
+        message = "Restored to ${if (parentOf(rel).isEmpty()) "Notes" else parentOf(rel)}"
+    }
+
+    fun deleteForever(item: TrashItem) = launch {
+        io { Core.deleteForever(item.name) }
+        loadTrash()
+    }
+
+    fun emptyTrash() = launch {
+        io { Core.emptyTrash() }
+        loadTrash()
+    }
+
+    // ---- Images -----------------------------------------------------------
+
+    /**
+     * Copies a picked or captured image into the vault's attachments folder and returns
+     * markdown that embeds it in the open note, or null if it couldn't be read.
+     */
+    suspend fun addImage(source: android.net.Uri): String? {
+        val rel = noteRel ?: return null
+        val saved = io { Attachments.save(app, Vault.dir(app), source) } ?: return null
+        unsynced = true
+        return "![](${Attachments.relativeTo(rel, saved)})"
+    }
+
     /** Follows a wiki link, creating the note if it doesn't exist yet. */
     fun openLink(target: String) = launch {
         var rel = io { Core.resolve(target) }

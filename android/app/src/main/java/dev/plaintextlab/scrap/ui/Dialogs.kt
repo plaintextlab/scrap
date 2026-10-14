@@ -86,7 +86,7 @@ fun ConfirmDelete(name: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Delete, contentDescription = null) },
         title = { Text("Delete “$name”?") },
-        text = { Text("It will be moved to the vault’s .trash folder.") },
+        text = { Text("It will be moved to the trash, where you can restore it from ⋮ › Trash.") },
         confirmButton = { TextButton(onClick = onConfirm) { Text("Delete") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

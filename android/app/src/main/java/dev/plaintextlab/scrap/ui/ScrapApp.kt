@@ -37,6 +37,7 @@ fun ScrapApp(vm: VaultViewModel) {
             when (screen) {
                 is Screen.Browse -> BrowseScreen(vm, screen.folder, snackbar)
                 is Screen.Note -> NoteScreen(vm, screen.rel, snackbar)
+                Screen.Trash -> TrashScreen(vm, snackbar)
                 Screen.Settings -> SettingsScreen(vm, snackbar)
                 Screen.SyncSetup -> SyncSetupScreen(vm, snackbar)
             }

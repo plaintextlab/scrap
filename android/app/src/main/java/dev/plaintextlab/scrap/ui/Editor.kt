@@ -1,7 +1,14 @@
 package dev.plaintextlab.scrap.ui
 
+import android.content.ActivityNotFoundException
+import android.net.Uri
 import android.os.SystemClock
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,11 +22,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -27,7 +37,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
+import java.io.File
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -39,14 +55,22 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
-/** Markdown editor with a formatting toolbar that sits above the keyboard. */
+/**
+ * Markdown editor with a formatting toolbar that sits above the keyboard.
+ * [onAddImage] stores a picked image and returns the markdown that embeds it.
+ */
 @Composable
-fun Editor(text: String, onChange: (String) -> Unit, padding: PaddingValues) {
+fun Editor(text: String, onChange: (String) -> Unit, padding: PaddingValues, onAddImage: suspend (Uri) -> String?) {
     val colors = MaterialTheme.colorScheme
     val highlight = remember(colors) { MarkdownHighlight(colors) }
     val focus = remember { FocusRequester() }
     val history = remember { EditHistory() }
     var value by remember { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var imageMenu by remember { mutableStateOf(false) }
+    // Survives the activity being recreated while the camera app is open.
+    var cameraFile by rememberSaveable { mutableStateOf<String?>(null) }
 
     // The note can change underneath us (sync, rename rewriting links).
     LaunchedEffect(text) {
@@ -60,6 +84,37 @@ fun Editor(text: String, onChange: (String) -> Unit, padding: PaddingValues) {
         if (record && next.text != value.text) history.record(value)
         value = next
         if (next.text != text) onChange(next.text)
+    }
+
+    fun insertImage(uri: Uri, cleanup: File? = null) {
+        scope.launch {
+            val markdown = onAddImage(uri)
+            cleanup?.delete()
+            if (markdown == null) {
+                Toast.makeText(context, "Couldn't add that image", Toast.LENGTH_SHORT).show()
+            } else {
+                update(insertBlock(value, markdown))
+            }
+        }
+    }
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) insertImage(uri)
+    }
+    val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
+        val file = cameraFile?.let { File(it) } ?: return@rememberLauncherForActivityResult
+        cameraFile = null
+        if (taken && file.length() > 0) insertImage(Uri.fromFile(file), cleanup = file) else file.delete()
+    }
+    fun openCamera() {
+        val file = File(File(context.cacheDir, "camera").apply { mkdirs() }, "photo-${System.currentTimeMillis()}.jpg")
+        cameraFile = file.path
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+        try {
+            takePhoto.launch(uri)
+        } catch (e: ActivityNotFoundException) {
+            cameraFile = null
+            Toast.makeText(context, "No camera app found", Toast.LENGTH_SHORT).show()
+        }
     }
 
     Column(
@@ -105,6 +160,27 @@ fun Editor(text: String, onChange: (String) -> Unit, padding: PaddingValues) {
                     ToolButton(ScrapIcons.Checklist, "Checklist") { update(toggleLinePrefix(value, "- [ ] ")) }
                     ToolButton(ScrapIcons.Link, "Link to note") { update(wrap(value, "[[", "]]")) }
                     ToolButton(ScrapIcons.Code, "Code") { update(wrap(value, "`", "`")) }
+                    Box {
+                        ToolButton(ScrapIcons.Image, "Add image") { imageMenu = true }
+                        DropdownMenu(expanded = imageMenu, onDismissRequest = { imageMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Choose from device") },
+                                leadingIcon = { Icon(ScrapIcons.PhotoLibrary, null) },
+                                onClick = {
+                                    imageMenu = false
+                                    pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Take photo") },
+                                leadingIcon = { Icon(ScrapIcons.Camera, null) },
+                                onClick = {
+                                    imageMenu = false
+                                    openCamera()
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -134,6 +210,15 @@ internal fun wrap(v: TextFieldValue, before: String, after: String): TextFieldVa
         TextRange(start + before.length, end + before.length)
     }
     return TextFieldValue(text, selection)
+}
+
+/** Inserts [block] on a line of its own at the cursor and puts the cursor after it. */
+internal fun insertBlock(v: TextFieldValue, block: String): TextFieldValue {
+    val at = v.selection.max
+    val before = if (at > 0 && v.text[at - 1] != '\n') "\n" else ""
+    val after = if (at < v.text.length && v.text[at] == '\n') "" else "\n"
+    val inserted = before + block + after
+    return TextFieldValue(v.text.substring(0, at) + inserted + v.text.substring(at), TextRange(at + inserted.length))
 }
 
 /** Adds or removes a prefix such as "- " at the start of the cursor's line. */

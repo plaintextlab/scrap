@@ -87,7 +87,8 @@ export!(Java_dev_plaintextlab_scrap_Core_list() {
     with_vault(|v| {
         let mut folders = Vec::new();
         collect_folders(&v.tree, &mut folders);
-        let notes: Vec<_> = v.notes.iter().map(|n| json!({ "rel": n.rel, "name": n.name })).collect();
+        let notes: Vec<_> = v.notes.iter().map(|n| json!({ "rel": n.rel, "name": n.name, "modified": n.modified }))
+            .collect();
         Ok(json!({ "folders": folders, "notes": notes }).to_string())
     })
 });
@@ -121,6 +122,30 @@ export!(Java_dev_plaintextlab_scrap_Core_rename(rel, name) {
 
 export!(Java_dev_plaintextlab_scrap_Core_delete(rel) {
     writing_vault(|v| v.delete(&rel).map(|_| String::new()).map_err(io))
+});
+
+export!(Java_dev_plaintextlab_scrap_Core_trash() {
+    with_vault(|v| {
+        let items: Vec<_> = v
+            .trash()
+            .into_iter()
+            .map(|t| json!({ "name": t.name, "original": t.original, "dir": t.is_dir, "deleted": t.deleted }))
+            .collect();
+        Ok(json!(items).to_string())
+    })
+});
+
+// Returns where the item was restored to.
+export!(Java_dev_plaintextlab_scrap_Core_restore(name) {
+    writing_vault(|v| v.restore(&name).map_err(io))
+});
+
+export!(Java_dev_plaintextlab_scrap_Core_deleteForever(name) {
+    writing_vault(|v| v.delete_forever(&name).map(|_| String::new()).map_err(io))
+});
+
+export!(Java_dev_plaintextlab_scrap_Core_emptyTrash() {
+    writing_vault(|v| v.empty_trash().map(|_| String::new()).map_err(io))
 });
 
 // Path of the note a wiki-link target points to, or "" when it doesn't exist.

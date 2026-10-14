@@ -150,6 +150,14 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
                             }
                             HorizontalDivider()
                             DropdownMenuItem(
+                                text = { Text("Trash") },
+                                leadingIcon = { Icon(Icons.Default.Delete, null) },
+                                onClick = {
+                                    menu = false
+                                    vm.navigate(Screen.Trash)
+                                },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Settings") },
                                 leadingIcon = { Icon(Icons.Default.Settings, null) },
                                 onClick = {
@@ -164,21 +172,11 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
             )
         },
         floatingActionButton = {
-            // Both create inside the folder on screen, so folders can be nested.
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                ExtendedFloatingActionButton(
-                    onClick = { dialog = NameDialog.NewNote(folder) },
-                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                    text = { Text("New note") },
-                )
-                ExtendedFloatingActionButton(
-                    onClick = { dialog = NameDialog.NewFolder(folder) },
-                    icon = { Icon(ScrapIcons.NewFolder, contentDescription = null) },
-                    text = { Text("New folder") },
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
-            }
+            ExtendedFloatingActionButton(
+                onClick = { dialog = NameDialog.NewNote(folder) },
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("New note") },
+            )
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
@@ -198,7 +196,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = padding.calculateBottomPadding() + 160.dp),
+                    contentPadding = PaddingValues(bottom = padding.calculateBottomPadding() + 88.dp),
                 ) {
                     items(subfolders, key = { "folder:$it" }) { f ->
                         ListItem(

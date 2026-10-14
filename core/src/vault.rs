@@ -8,6 +8,18 @@ use std::path::{Path, PathBuf};
 
 /// Deleted notes are moved here instead of being destroyed.
 pub const TRASH: &str = ".trash";
+/// Inside the trash: where each trashed item came from, one tab-separated line each.
+const TRASH_INDEX: &str = ".origins";
+
+pub struct TrashItem {
+    /// File or folder name inside the trash.
+    pub name: String,
+    /// Path it was deleted from, relative to the vault root.
+    pub original: String,
+    pub is_dir: bool,
+    /// When it was deleted, in milliseconds since the Unix epoch (0 if unknown).
+    pub deleted: u64,
+}
 
 pub struct Note {
     /// Path relative to the vault root, always with `/` separators.
@@ -228,20 +240,132 @@ impl Vault {
         Ok(new_rel)
     }
 
-    /// Moves a note or folder into the vault's `.trash` folder.
+    /// Moves a note or folder into the vault's `.trash` folder, remembering where it came
+    /// from so it can be restored.
     pub fn delete(&mut self, rel: &str) -> io::Result<()> {
         let trash = self.root.join(TRASH);
         fs::create_dir_all(&trash)?;
         let name = rel.rsplit('/').next().unwrap_or(rel);
-        let mut dst = trash.join(name);
+        let mut trashed = name.to_string();
         let mut n = 1;
-        while dst.exists() {
-            dst = trash.join(format!("{n} {name}"));
+        while trash.join(&trashed).exists() {
+            trashed = format!("{n} {name}");
             n += 1;
         }
-        fs::rename(self.path(rel), dst)?;
+        fs::rename(self.path(rel), trash.join(&trashed))?;
+        let mut origins = self.trash_origins();
+        origins.retain(|o| o.0 != trashed);
+        origins.push((trashed, rel.to_string(), now_millis()));
+        self.write_trash_origins(&origins)?;
         self.rescan();
         Ok(())
+    }
+
+    /// Everything in the trash, most recently deleted first.
+    pub fn trash(&self) -> Vec<TrashItem> {
+        let origins = self.trash_origins();
+        let Ok(read) = fs::read_dir(self.root.join(TRASH)) else { return Vec::new() };
+        let mut items: Vec<TrashItem> = read
+            .flatten()
+            .filter_map(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                if name.starts_with('.') {
+                    return None;
+                }
+                let is_dir = e.file_type().ok()?.is_dir();
+                let known = origins.iter().find(|o| o.0 == name);
+                let deleted = known.map(|o| o.2).unwrap_or_else(|| {
+                    e.metadata().ok().and_then(|m| m.modified().ok()).map_or(0, millis)
+                });
+                // Items trashed before origins were recorded go back to the vault root.
+                let original = known.map(|o| o.1.clone()).unwrap_or_else(|| name.clone());
+                Some(TrashItem { name, original, is_dir, deleted })
+            })
+            .collect();
+        items.sort_by(|a, b| b.deleted.cmp(&a.deleted).then_with(|| a.name.cmp(&b.name)));
+        items
+    }
+
+    /// Moves a trashed item back to where it was deleted from (recreating missing folders).
+    /// If that name is taken it gets a numbered name. Returns its new path.
+    pub fn restore(&mut self, name: &str) -> io::Result<String> {
+        let src = self.trash_path(name)?;
+        let original = self.trash().into_iter().find(|t| t.name == name).map(|t| t.original);
+        let original = original.unwrap_or_else(|| name.to_string());
+        let folder = parent(&original).to_string();
+        let file = original.rsplit('/').next().unwrap_or(&original);
+        let rel = if self.path(&original).exists() {
+            match file.strip_suffix(".md") {
+                Some(stem) if !src.is_dir() => self.unique(&folder, stem, ".md"),
+                _ => self.unique(&folder, file, ""),
+            }
+        } else {
+            original.clone()
+        };
+        if !folder.is_empty() {
+            fs::create_dir_all(self.path(&folder))?;
+        }
+        fs::rename(&src, self.path(&rel))?;
+        self.forget_trashed(name)?;
+        self.rescan();
+        Ok(rel)
+    }
+
+    /// Permanently deletes one trashed item.
+    pub fn delete_forever(&mut self, name: &str) -> io::Result<()> {
+        let path = self.trash_path(name)?;
+        if path.is_dir() {
+            fs::remove_dir_all(&path)?;
+        } else {
+            fs::remove_file(&path)?;
+        }
+        self.forget_trashed(name)
+    }
+
+    /// Permanently deletes everything in the trash.
+    pub fn empty_trash(&mut self) -> io::Result<()> {
+        let trash = self.root.join(TRASH);
+        if trash.exists() {
+            fs::remove_dir_all(&trash)?;
+        }
+        Ok(())
+    }
+
+    /// Path of a top-level trash entry; refuses names that would escape the trash.
+    fn trash_path(&self, name: &str) -> io::Result<PathBuf> {
+        if name.is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." || name.starts_with('.') {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "not in the trash"));
+        }
+        let path = self.root.join(TRASH).join(name);
+        if !path.exists() {
+            return Err(io::Error::new(io::ErrorKind::NotFound, format!("\"{name}\" is no longer in the trash")));
+        }
+        Ok(path)
+    }
+
+    fn forget_trashed(&self, name: &str) -> io::Result<()> {
+        let mut origins = self.trash_origins();
+        origins.retain(|o| o.0 != name);
+        self.write_trash_origins(&origins)
+    }
+
+    /// (name in trash, original path, deleted at) for each trashed item.
+    fn trash_origins(&self) -> Vec<(String, String, u64)> {
+        let text = fs::read_to_string(self.root.join(TRASH).join(TRASH_INDEX)).unwrap_or_default();
+        text.lines()
+            .filter_map(|l| {
+                let mut parts = l.splitn(3, '\t');
+                let name = parts.next()?.to_string();
+                let rel = parts.next()?.to_string();
+                let at = parts.next()?.parse().ok()?;
+                Some((name, rel, at))
+            })
+            .collect()
+    }
+
+    fn write_trash_origins(&self, origins: &[(String, String, u64)]) -> io::Result<()> {
+        let text: String = origins.iter().map(|(n, r, t)| format!("{n}\t{r}\t{t}\n")).collect();
+        fs::write(self.root.join(TRASH).join(TRASH_INDEX), text)
     }
 
     fn unique(&self, folder: &str, base: &str, ext: &str) -> String {
@@ -497,6 +621,43 @@ mod tests {
         assert_eq!(inner, "Projects/2026");
         assert!(root.join("Projects/2026/.gitkeep").exists());
         assert_eq!(v.tree.dirs.iter().find(|d| d.rel == outer).unwrap().dirs[0].rel, inner);
+    }
+
+    #[test]
+    fn trash_restores_to_original_place() {
+        let root = temp_dir("trash");
+        let mut v = Vault::open(root.clone()).unwrap();
+        let folder = v.create_folder("", "Work").unwrap();
+        let note = v.create_note(&folder, "Plan").unwrap();
+        v.save(&note, "the plan").unwrap();
+        v.delete(&note).unwrap();
+        v.delete(&folder).unwrap();
+        assert!(v.notes.is_empty());
+
+        let items = v.trash();
+        assert_eq!(items.len(), 2);
+        let plan = items.iter().find(|t| t.name == "Plan.md").unwrap();
+        assert_eq!(plan.original, "Work/Plan.md");
+        assert!(!plan.is_dir);
+
+        // The folder is gone, so restoring the note recreates it.
+        assert_eq!(v.restore("Plan.md").unwrap(), "Work/Plan.md");
+        assert_eq!(fs::read_to_string(root.join("Work/Plan.md")).unwrap(), "the plan");
+        // The folder's name is taken now, so it comes back numbered.
+        assert_eq!(v.restore("Work").unwrap(), "Work 1");
+        assert!(v.trash().is_empty());
+
+        // Same name deleted twice: both are kept and restored.
+        let a = v.create_note("", "Dup").unwrap();
+        v.delete(&a).unwrap();
+        let b = v.create_note("", "Dup").unwrap();
+        v.delete(&b).unwrap();
+        assert_eq!(v.trash().len(), 2);
+        v.delete_forever("1 Dup.md").unwrap();
+        assert_eq!(v.trash().len(), 1);
+        assert!(v.restore("../escape").is_err());
+        v.empty_trash().unwrap();
+        assert!(v.trash().is_empty());
     }
 
     #[test]

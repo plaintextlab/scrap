@@ -54,8 +54,11 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mikepenz.markdown.coil3.Coil3ImageTransformerImpl
 import com.mikepenz.markdown.m3.Markdown
+import dev.plaintextlab.scrap.Attachments
 import dev.plaintextlab.scrap.NoteRef
+import java.io.File
 import dev.plaintextlab.scrap.OutLink
 import dev.plaintextlab.scrap.Screen
 import dev.plaintextlab.scrap.VaultViewModel
@@ -153,7 +156,11 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
                 CircularProgressIndicator()
             }
             else -> ScaledText(vm.settings.textScale) {
-                if (vm.editing) Editor(vm.noteText, vm::updateText, padding) else Reader(vm, vm.noteText, padding)
+                if (vm.editing) {
+                    Editor(vm.noteText, vm::updateText, padding, onAddImage = vm::addImage)
+                } else {
+                    Reader(vm, rel, vm.noteText, padding)
+                }
             }
         }
     }
@@ -176,8 +183,10 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
 }
 
 @Composable
-private fun Reader(vm: VaultViewModel, text: String, padding: PaddingValues) {
-    val markdown by produceState<String?>(null, text) { value = vm.preview(text) }
+private fun Reader(vm: VaultViewModel, rel: String, text: String, padding: PaddingValues) {
+    val markdown by produceState<String?>(null, text, rel) {
+        value = Attachments.resolve(vm.preview(text), rel, File(vm.vaultPath))
+    }
     val system = LocalUriHandler.current
     val handler = remember(system) {
         object : UriHandler {
@@ -206,7 +215,7 @@ private fun Reader(vm: VaultViewModel, text: String, padding: PaddingValues) {
         }
         markdown?.let {
             CompositionLocalProvider(LocalUriHandler provides handler) {
-                Markdown(content = it, modifier = Modifier.fillMaxWidth())
+                Markdown(content = it, imageTransformer = Coil3ImageTransformerImpl, modifier = Modifier.fillMaxWidth())
             }
         }
         Spacer(Modifier.height(96.dp))

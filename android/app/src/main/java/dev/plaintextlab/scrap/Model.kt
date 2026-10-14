@@ -10,9 +10,13 @@ data class SearchHit(val rel: String, val name: String, val text: String)
 
 data class OutLink(val target: String, val exists: Boolean)
 
+/** Something in the trash: [name] inside the trash, [original] where it was deleted from. */
+data class TrashItem(val name: String, val original: String, val isDir: Boolean, val deleted: Long)
+
 sealed interface Screen {
     data class Browse(val folder: String) : Screen
     data class Note(val rel: String) : Screen
+    data object Trash : Screen
     data object Settings : Screen
     data object SyncSetup : Screen
 }
