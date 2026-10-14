@@ -212,11 +212,24 @@ internal fun wrap(v: TextFieldValue, before: String, after: String): TextFieldVa
     return TextFieldValue(text, selection)
 }
 
-/** Inserts [block] on a line of its own at the cursor and puts the cursor after it. */
+/**
+ * Inserts [block] as a paragraph of its own (blank lines around it, so markdown doesn't
+ * fold it into a neighbouring list item or paragraph) and puts the cursor after it.
+ */
 internal fun insertBlock(v: TextFieldValue, block: String): TextFieldValue {
     val at = v.selection.max
-    val before = if (at > 0 && v.text[at - 1] != '\n') "\n" else ""
-    val after = if (at < v.text.length && v.text[at] == '\n') "" else "\n"
+    val head = v.text.substring(0, at)
+    val tail = v.text.substring(at)
+    val before = when {
+        head.isEmpty() || head.endsWith("\n\n") -> ""
+        head.endsWith("\n") -> "\n"
+        else -> "\n\n"
+    }
+    val after = when {
+        tail.startsWith("\n\n") -> ""
+        tail.startsWith("\n") -> "\n"
+        else -> "\n\n"
+    }
     val inserted = before + block + after
     return TextFieldValue(v.text.substring(0, at) + inserted + v.text.substring(at), TextRange(at + inserted.length))
 }

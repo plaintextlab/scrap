@@ -71,6 +71,45 @@ object Attachments {
     /** Link from the note at [noteRel] to the vault-relative [path]. */
     fun relativeTo(noteRel: String, path: String): String = "../".repeat(noteRel.count { it == '/' }) + path
 
+    /** A piece of a note for the reader: markdown text, or an image on a line of its own. */
+    sealed interface Block {
+        data class Text(val markdown: String) : Block
+        data class Image(val url: String, val alt: String) : Block
+    }
+
+    private val imageLine = Regex("""^\s*!\[([^\]]*)]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)\s*$""")
+
+    /**
+     * Splits [markdown] at lines that hold only an image, so the reader can show those at
+     * full width with their real aspect ratio (the markdown renderer crops them). Lines in
+     * fenced code blocks are left alone.
+     */
+    fun splitImages(markdown: String): List<Block> {
+        val blocks = mutableListOf<Block>()
+        val text = StringBuilder()
+        var fence: String? = null
+        fun flush() {
+            if (text.isNotBlank()) blocks += Block.Text(text.toString())
+            text.clear()
+        }
+        for (line in markdown.lines()) {
+            val trimmed = line.trimStart()
+            val marker = trimmed.take(3)
+            if (marker == "```" || marker == "~~~") {
+                fence = if (fence == null) marker else if (fence == marker) null else fence
+            }
+            val image = if (fence == null) imageLine.matchEntire(line) else null
+            if (image != null) {
+                flush()
+                blocks += Block.Image(image.groupValues[2], image.groupValues[1])
+            } else {
+                text.append(line).append('\n')
+            }
+        }
+        flush()
+        return blocks
+    }
+
     private val imageLink = Regex("""(!\[[^\]]*]\()([^)\s]+)([^)]*\))""")
 
     /**

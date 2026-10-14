@@ -64,5 +64,6 @@ dependencies {
     implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.30.0")
     // Images in notes: Coil loads them for the renderer (local files, plus web images).
     implementation("com.mikepenz:multiplatform-markdown-renderer-coil3:0.30.0")
+    implementation("io.coil-kt.coil3:coil-compose:3.0.4")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.0.4")
 }

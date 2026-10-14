@@ -54,7 +54,13 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
 import com.mikepenz.markdown.coil3.Coil3ImageTransformerImpl
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.mikepenz.markdown.m3.Markdown
 import dev.plaintextlab.scrap.Attachments
 import dev.plaintextlab.scrap.NoteRef
@@ -184,8 +190,11 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
 
 @Composable
 private fun Reader(vm: VaultViewModel, rel: String, text: String, padding: PaddingValues) {
-    val markdown by produceState<String?>(null, text, rel) {
-        value = Attachments.resolve(vm.preview(text), rel, File(vm.vaultPath))
+    val blocks by produceState<List<Attachments.Block>?>(null, text, rel) {
+        val markdown = vm.preview(text)
+        value = withContext(Dispatchers.IO) {
+            Attachments.splitImages(Attachments.resolve(markdown, rel, File(vm.vaultPath)))
+        }
     }
     val system = LocalUriHandler.current
     val handler = remember(system) {
@@ -213,9 +222,25 @@ private fun Reader(vm: VaultViewModel, rel: String, text: String, padding: Paddi
                 modifier = Modifier.clickable { vm.editing = true },
             )
         }
-        markdown?.let {
-            CompositionLocalProvider(LocalUriHandler provides handler) {
-                Markdown(content = it, imageTransformer = Coil3ImageTransformerImpl, modifier = Modifier.fillMaxWidth())
+        CompositionLocalProvider(LocalUriHandler provides handler) {
+            for (block in blocks.orEmpty()) {
+                when (block) {
+                    is Attachments.Block.Text -> Markdown(
+                        content = block.markdown,
+                        imageTransformer = Coil3ImageTransformerImpl,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    // Full width at the image's own aspect ratio.
+                    is Attachments.Block.Image -> AsyncImage(
+                        model = block.url,
+                        contentDescription = block.alt.ifEmpty { null },
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                            .clip(RoundedCornerShape(12.dp)),
+                    )
+                }
             }
         }
         Spacer(Modifier.height(96.dp))
