@@ -96,7 +96,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
                     }
                 },
                 actions = {
-                    IconButton(onClick = { vm.navigate(Screen.Search) }) {
+                    IconButton(onClick = { vm.openSearch() }) {
                         Icon(Icons.Default.Search, contentDescription = "Search")
                     }
                     if (vm.settings.sync.configured) {

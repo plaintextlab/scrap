@@ -16,6 +16,10 @@ use std::sync::Mutex;
 mod sync;
 
 static VAULT: Mutex<Option<Vault>> = Mutex::new(None);
+/// Held while files in the vault are written, including for a whole sync, so edits can't
+/// land in the middle of a merge. Reads and search only need `VAULT`, so they stay fast
+/// while a sync is talking to the network. Always taken before `VAULT`.
+static DISK: Mutex<()> = Mutex::new(());
 
 type Res = Result<String, String>;
 
@@ -23,6 +27,12 @@ fn with_vault<T>(f: impl FnOnce(&mut Vault) -> Result<T, String>) -> Result<T, S
     let mut guard = VAULT.lock().map_err(|_| "vault lock poisoned".to_string())?;
     let v = guard.as_mut().ok_or("no vault open")?;
     f(v)
+}
+
+/// `with_vault` for operations that change files on disk.
+fn writing_vault<T>(f: impl FnOnce(&mut Vault) -> Result<T, String>) -> Result<T, String> {
+    let _disk = DISK.lock().map_err(|_| "disk lock poisoned".to_string())?;
+    with_vault(f)
 }
 
 fn io(e: std::io::Error) -> String {
@@ -94,23 +104,23 @@ export!(Java_dev_plaintextlab_scrap_Core_read(rel) {
 });
 
 export!(Java_dev_plaintextlab_scrap_Core_save(rel, text) {
-    with_vault(|v| v.save(&rel, &text).map(|_| String::new()).map_err(io))
+    writing_vault(|v| v.save(&rel, &text).map(|_| String::new()).map_err(io))
 });
 
 export!(Java_dev_plaintextlab_scrap_Core_createNote(folder, name) {
-    with_vault(|v| v.create_note(&folder, &name).map_err(io))
+    writing_vault(|v| v.create_note(&folder, &name).map_err(io))
 });
 
 export!(Java_dev_plaintextlab_scrap_Core_createFolder(parent, name) {
-    with_vault(|v| v.create_folder(&parent, &name).map_err(io))
+    writing_vault(|v| v.create_folder(&parent, &name).map_err(io))
 });
 
 export!(Java_dev_plaintextlab_scrap_Core_rename(rel, name) {
-    with_vault(|v| v.rename(&rel, &name).map_err(io))
+    writing_vault(|v| v.rename(&rel, &name).map_err(io))
 });
 
 export!(Java_dev_plaintextlab_scrap_Core_delete(rel) {
-    with_vault(|v| v.delete(&rel).map(|_| String::new()).map_err(io))
+    writing_vault(|v| v.delete(&rel).map(|_| String::new()).map_err(io))
 });
 
 // Path of the note a wiki-link target points to, or "" when it doesn't exist.
@@ -178,12 +188,16 @@ export!(Java_dev_plaintextlab_scrap_Core_sync(config) {
     }
     #[cfg(target_os = "android")]
     tls::init()?;
+    // The network part can take seconds; don't hold the vault lock (and block search,
+    // saving and browsing) while it runs. Sync only touches files on disk.
+    let _disk = DISK.lock().map_err(|_| "disk lock poisoned".to_string())?;
+    let root = with_vault(|v| Ok(v.root.clone()))?;
+    let result = sync::sync(&root, &cfg);
     with_vault(|v| {
-        let root = v.root.clone();
-        let result = sync::sync(&root, &cfg);
         v.rescan();
-        result
-    })
+        Ok(())
+    })?;
+    result
 });
 
 /// libgit2 on Android: trust the system CA certificates and relax checks that assume a

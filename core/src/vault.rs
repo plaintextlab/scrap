@@ -43,6 +43,9 @@ pub struct Vault {
     /// Bumped whenever the index changes, so callers can cache derived data.
     pub generation: u64,
     by_name: HashMap<String, Vec<usize>>,
+    /// Lowercased name and content of each note, parallel to `notes`, so a search
+    /// doesn't lowercase the whole vault on every keystroke.
+    lower: Vec<(String, String)>,
 }
 
 impl Vault {
@@ -56,6 +59,7 @@ impl Vault {
             tree: Dir::default(),
             generation: 0,
             by_name: HashMap::new(),
+            lower: Vec::new(),
         };
         vault.rescan();
         Ok(vault)
@@ -71,6 +75,7 @@ impl Vault {
         for (i, n) in self.notes.iter().enumerate() {
             self.by_name.entry(n.name.to_lowercase()).or_default().push(i);
         }
+        self.lower = self.notes.iter().map(|n| (n.name.to_lowercase(), n.content.to_lowercase())).collect();
         self.generation += 1;
     }
 
@@ -94,6 +99,7 @@ impl Vault {
                 note.content = text.to_string();
                 note.links = extract_links(text);
                 note.modified = now_millis();
+                self.lower[i].1 = text.to_lowercase();
                 self.generation += 1;
             }
             None => self.rescan(),
@@ -143,13 +149,20 @@ impl Vault {
         if q.is_empty() {
             return hits;
         }
-        for (i, n) in self.notes.iter().enumerate() {
-            if n.name.to_lowercase().contains(&q) {
+        for (i, (n, (name, content))) in self.notes.iter().zip(&self.lower).enumerate() {
+            if name.contains(&q) {
                 hits.push(Hit { note: i, text: String::new() });
             }
-            for line in n.content.lines() {
-                if line.to_lowercase().contains(&q) {
-                    hits.push(Hit { note: i, text: snippet(line.trim(), 140) });
+            // Most notes don't match at all; only walk the lines of those that do.
+            // Lowercasing never adds or removes line breaks, so the lines stay aligned.
+            if !content.contains(&q) {
+                continue;
+            }
+            for (line, lower) in n.content.lines().zip(content.lines()) {
+                if let Some(at) = lower.find(&q) {
+                    // Character position of the match (lowercasing rarely changes it).
+                    let at = lower[..at].chars().count();
+                    hits.push(Hit { note: i, text: snippet_around(line, at, 140) });
                     if hits.len() >= limit {
                         return hits;
                     }
@@ -409,6 +422,18 @@ fn snippet(line: &str, max: usize) -> String {
     }
 }
 
+/// Up to `max` characters of `line`, starting a little before the character at `at` so
+/// that a match far into a long line is still visible.
+fn snippet_around(line: &str, at: usize, max: usize) -> String {
+    let lead = line.chars().take_while(|c| c.is_whitespace()).count();
+    let start = at.saturating_sub(40).max(lead);
+    if start == lead {
+        return snippet(line.trim(), max);
+    }
+    let rest: String = line.chars().skip(start).collect();
+    "…".to_string() + &snippet(rest.trim_end(), max)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -464,6 +489,29 @@ mod tests {
         assert!(root.join(TRASH).join("Idea one.md").exists());
         assert_eq!(v.notes.len(), 2);
         assert_eq!(v.search("untitled", 10).len(), 1);
+    }
+
+    #[test]
+    fn search_finds_names_and_lines() {
+        let root = temp_dir("search");
+        fs::write(root.join("Ünïcode Plans.md"), "first line\n  Second LINE mentions ÄPFEL\r\nthird").unwrap();
+        fs::write(root.join("Other.md"), "nothing here").unwrap();
+        let long = format!("{} needle at the end", "word ".repeat(60));
+        fs::write(root.join("Long.md"), &long).unwrap();
+        let mut v = Vault::open(root.clone()).unwrap();
+
+        let hits = v.search("äpfel", 10);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].text, "Second LINE mentions ÄPFEL");
+        assert_eq!(v.search("ünïcode", 10).iter().filter(|h| h.text.is_empty()).count(), 1);
+        assert!(v.search("missing", 10).is_empty());
+
+        let hit = &v.search("NEEDLE", 10)[0];
+        assert!(hit.text.starts_with('…') && hit.text.contains("needle at the end"), "{}", hit.text);
+
+        // Saving keeps the search index current.
+        v.save("Other.md", "now with apples").unwrap();
+        assert_eq!(v.search("APPLES", 10).len(), 1);
     }
 
     #[test]

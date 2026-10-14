@@ -13,7 +13,6 @@ data class OutLink(val target: String, val exists: Boolean)
 sealed interface Screen {
     data class Browse(val folder: String) : Screen
     data class Note(val rel: String) : Screen
-    data object Search : Screen
     data object Settings : Screen
     data object SyncSetup : Screen
 }

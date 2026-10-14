@@ -81,6 +81,8 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
         notes = n.map {
             n.getJSONObject(it).let { o -> NoteRef(o.getString("rel"), o.getString("name"), o.optLong("modified")) }
         }
+        // Notes changed (sync, rename, delete): refresh open search results.
+        if (searchOpen && searchQuery.isNotBlank()) updateSearch(searchQuery)
     }
 
     /** Picks up changes made outside the app (sync, file managers, USB). */
@@ -354,11 +356,57 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
         return a.map { a.getJSONObject(it).let { o -> OutLink(o.getString("target"), o.getBoolean("exists")) } }
     }
 
-    suspend fun search(query: String): List<SearchHit> {
+    private suspend fun search(query: String): List<SearchHit> {
         if (query.isBlank()) return emptyList()
         val a = JSONArray(io { Core.search(query) })
         return a.map {
             a.getJSONObject(it).let { o -> SearchHit(o.getString("rel"), o.getString("name"), o.getString("text")) }
+        }
+    }
+
+    // ---- Search overlay ---------------------------------------------------
+    // Kept here rather than in the UI so the query and results survive opening a result
+    // and coming back.
+
+    var searchOpen by mutableStateOf(false)
+        private set
+    var searchQuery by mutableStateOf("")
+        private set
+    var searchHits by mutableStateOf(emptyList<SearchHit>())
+        private set
+    /** The query `searchHits` belongs to; differs from `searchQuery` while a search runs. */
+    var searchedFor by mutableStateOf("")
+        private set
+    private var searchJob: Job? = null
+
+    fun openSearch() {
+        searchOpen = true
+    }
+
+    fun closeSearch() {
+        searchOpen = false
+        updateSearch("")
+    }
+
+    /** Searches on every keystroke; the previous results stay up until new ones arrive. */
+    fun updateSearch(query: String) {
+        searchQuery = query
+        searchJob?.cancel()
+        if (query.isBlank()) {
+            searchHits = emptyList()
+            searchedFor = query
+            return
+        }
+        searchJob = viewModelScope.launch {
+            val hits = try {
+                search(query)
+            } catch (e: java.io.IOException) {
+                emptyList()
+            }
+            if (searchQuery == query) {
+                searchHits = hits
+                searchedFor = query
+            }
         }
     }
 }
