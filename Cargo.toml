@@ -1,0 +1,17 @@
+[package]
+name = "scrap"
+version = "0.1.0"
+edition = "2021"
+description = "A minimal, markdown-based notes app with git sync"
+license = "MIT"
+
+[dependencies]
+eframe = { version = "0.31", features = ["persistence"] }
+pulldown-cmark = { version = "0.12", default-features = false }
+rfd = "0.15"
+serde = { version = "1", features = ["derive"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
