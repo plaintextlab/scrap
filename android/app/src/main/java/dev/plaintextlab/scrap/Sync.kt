@@ -49,7 +49,6 @@ object Sync {
             .put("name", s.authorName)
             .put("email", s.authorEmail)
             .put("device", Build.MODEL ?: "Android")
-            .put("caFile", File(context.cacheDir, "cacerts.pem").path)
         try {
             Core.sync(config.toString()).also { store.recordSync(it, failed = false) }
         } catch (e: IOException) {

@@ -160,7 +160,7 @@ export!(Java_dev_plaintextlab_scrap_Core_preview(text) {
 });
 
 // Commits, pulls and pushes the vault. `config` is JSON with url, username, token, branch,
-// name, email, device and caFile (where to write the CA bundle on Android).
+// name, email and device.
 export!(Java_dev_plaintextlab_scrap_Core_sync(config) {
     let c: serde_json::Value = serde_json::from_str(&config).map_err(|e| e.to_string())?;
     let field = |k: &str| c[k].as_str().unwrap_or_default().trim().to_string();
@@ -177,7 +177,7 @@ export!(Java_dev_plaintextlab_scrap_Core_sync(config) {
         return Err("No repository configured".into());
     }
     #[cfg(target_os = "android")]
-    tls::init(std::path::Path::new(&field("caFile")))?;
+    tls::init()?;
     with_vault(|v| {
         let root = v.root.clone();
         let result = sync::sync(&root, &cfg);
@@ -186,44 +186,68 @@ export!(Java_dev_plaintextlab_scrap_Core_sync(config) {
     })
 });
 
-/// libgit2 on Android: point OpenSSL at the system CA certificates and relax checks that
-/// assume a desktop environment.
+/// libgit2 on Android: trust the system CA certificates and relax checks that assume a
+/// desktop environment.
 #[cfg(target_os = "android")]
 mod tls {
     use std::fs;
-    use std::path::Path;
+    use std::os::raw::{c_int, c_void};
+    use std::ptr;
     use std::sync::OnceLock;
 
     static INIT: OnceLock<Result<(), String>> = OnceLock::new();
 
-    pub fn init(bundle: &Path) -> Result<(), String> {
+    pub fn init() -> Result<(), String> {
         INIT.get_or_init(|| {
-            // Android keeps one PEM file per CA; OpenSSL wants a single bundle.
-            let mut pem = Vec::new();
-            for dir in ["/apex/com.android.conscrypt/cacerts", "/system/etc/security/cacerts"] {
-                for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
-                    if let Ok(bytes) = fs::read(entry.path()) {
-                        pem.extend_from_slice(&bytes);
-                        pem.push(b'\n');
-                    }
-                }
-            }
-            if pem.is_empty() {
-                return Err("No system CA certificates found".into());
-            }
-            fs::write(bundle, &pem).map_err(|e| e.to_string())?;
             let err = |e: git2::Error| e.message().to_string();
             // SAFETY: runs once, before any other libgit2 use in this process.
             unsafe {
-                git2::opts::set_ssl_cert_file(bundle).map_err(err)?;
                 // App storage may report a different owner than the app's uid.
                 git2::opts::set_verify_owner_validation(false).map_err(err)?;
                 for level in [git2::ConfigLevel::System, git2::ConfigLevel::XDG, git2::ConfigLevel::Global] {
                     let _ = git2::opts::set_search_path(level, "");
                 }
             }
+            // Android keeps one PEM file per CA. The bundled OpenSSL is built without stdio
+            // and can't open files itself, so each certificate is parsed from memory.
+            let mut added = 0;
+            for dir in ["/apex/com.android.conscrypt/cacerts", "/system/etc/security/cacerts"] {
+                for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
+                    if let Ok(pem) = fs::read(entry.path()) {
+                        added += unsafe { add_certs(&pem) };
+                    }
+                }
+            }
+            if added == 0 {
+                return Err("No system CA certificates found".into());
+            }
             Ok(())
         })
         .clone()
+    }
+
+    /// Adds every certificate in a PEM blob to libgit2's trust store. Returns how many.
+    unsafe fn add_certs(pem: &[u8]) -> usize {
+        use openssl_sys::*;
+        let bio = BIO_new_mem_buf(pem.as_ptr() as *const c_void, pem.len() as c_int);
+        if bio.is_null() {
+            return 0;
+        }
+        let mut added = 0;
+        loop {
+            let cert = PEM_read_bio_X509(bio, ptr::null_mut(), None, ptr::null_mut());
+            if cert.is_null() {
+                break;
+            }
+            // The store takes its own reference, so ours is released either way.
+            if libgit2_sys::git_libgit2_opts(libgit2_sys::GIT_OPT_ADD_SSL_X509_CERT as c_int, cert) == 0 {
+                added += 1;
+            }
+            X509_free(cert);
+        }
+        BIO_free_all(bio);
+        // Reaching the end of the PEM data leaves a "no start line" error queued.
+        ERR_clear_error();
+        added
     }
 }

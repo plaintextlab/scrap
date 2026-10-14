@@ -2848,6 +2848,8 @@ version = "0.1.0"
 dependencies = [
  "git2",
  "jni 0.21.1",
+ "libgit2-sys",
+ "openssl-sys",
  "scrap-core",
  "serde_json",
 ]
