@@ -13,3 +13,9 @@ crate-type = ["cdylib"]
 scrap-core = { path = "../../core" }
 jni = "0.21"
 serde_json = "1"
+# No git binary on Android: sync uses libgit2, built from source.
+git2 = { version = "0.20", default-features = false, features = ["https", "vendored-libgit2"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+# TLS for HTTPS remotes comes from a bundled OpenSSL on Android.
+git2 = { version = "0.20", default-features = false, features = ["https", "vendored-libgit2", "vendored-openssl"] }

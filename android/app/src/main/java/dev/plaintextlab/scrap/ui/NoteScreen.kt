@@ -1,21 +1,18 @@
 package dev.plaintextlab.scrap.ui
 
+import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -23,6 +20,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -42,7 +40,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -50,12 +47,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.platform.UriHandler
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mikepenz.markdown.m3.Markdown
@@ -64,7 +60,6 @@ import dev.plaintextlab.scrap.OutLink
 import dev.plaintextlab.scrap.Screen
 import dev.plaintextlab.scrap.VaultViewModel
 import dev.plaintextlab.scrap.titleOf
-import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,6 +69,7 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     val reading = vm.noteLoaded && !vm.editing
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -99,6 +95,18 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
                         }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(
+                                text = { Text("Share") },
+                                leadingIcon = { Icon(Icons.Default.Share, null) },
+                                onClick = {
+                                    menu = false
+                                    val send = Intent(Intent.ACTION_SEND)
+                                        .setType("text/plain")
+                                        .putExtra(Intent.EXTRA_SUBJECT, titleOf(rel))
+                                        .putExtra(Intent.EXTRA_TEXT, vm.noteText)
+                                    context.startActivity(Intent.createChooser(send, null))
+                                },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Rename") },
                                 leadingIcon = { Icon(Icons.Default.Edit, null) },
                                 onClick = {
@@ -113,6 +121,15 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
                                     menu = false
                                     deleting = true
                                 },
+                            )
+                            HorizontalDivider()
+                            val words = remember(vm.noteText) {
+                                vm.noteText.split(Regex("""\s+""")).count { it.isNotEmpty() }
+                            }
+                            DropdownMenuItem(
+                                text = { Text("$words words · ${vm.noteText.length} characters") },
+                                onClick = {},
+                                enabled = false,
                             )
                         }
                     }
@@ -135,8 +152,9 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
             !vm.noteLoaded -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            vm.editing -> Editor(vm.noteText, vm::updateText, padding)
-            else -> Reader(vm, vm.noteText, padding)
+            else -> ScaledText(vm.settings.textScale) {
+                if (vm.editing) Editor(vm.noteText, vm::updateText, padding) else Reader(vm, vm.noteText, padding)
+            }
         }
     }
 
@@ -154,32 +172,6 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
             deleting = false
             vm.delete(rel)
         }
-    }
-}
-
-@Composable
-private fun Editor(text: String, onChange: (String) -> Unit, padding: PaddingValues) {
-    val colors = MaterialTheme.colorScheme
-    val highlight = remember(colors) { MarkdownHighlight(colors) }
-    val focus = remember { FocusRequester() }
-    BasicTextField(
-        value = text,
-        onValueChange = onChange,
-        textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
-        cursorBrush = SolidColor(colors.primary),
-        visualTransformation = highlight,
-        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(padding)
-            .consumeWindowInsets(padding)
-            .imePadding()
-            .padding(horizontal = 20.dp, vertical = 12.dp)
-            .focusRequester(focus),
-    )
-    LaunchedEffect(Unit) {
-        delay(100)
-        runCatching { focus.requestFocus() }
     }
 }
 
@@ -278,4 +270,13 @@ private fun EmptyLine(text: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
     )
+}
+
+/** Applies the user's text size to note content only, leaving the app chrome alone. */
+@Composable
+private fun ScaledText(scale: Float, content: @Composable () -> Unit) {
+    val density = LocalDensity.current
+    CompositionLocalProvider(LocalDensity provides Density(density.density, density.fontScale * scale)) {
+        content()
+    }
 }

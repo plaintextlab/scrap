@@ -51,7 +51,7 @@ jobs:
           key: ${{ matrix.target }}
       - name: Linux dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev pkg-config
       - name: Test
         if: matrix.test
         run: |
@@ -90,6 +90,8 @@ jobs:
         run: |
           cargo install cargo-ndk --version "^3" --locked
           export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          # OpenSSL (vendored, for HTTPS sync) looks for the NDK under this name.
+          export ANDROID_NDK_ROOT="$ANDROID_NDK_LATEST_HOME"
           cargo ndk -t arm64-v8a -o android/app/src/main/jniLibs build --release -p scrap-android
       - uses: actions/setup-java@v4
         with:

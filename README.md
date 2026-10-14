@@ -47,7 +47,13 @@ Make sure git knows who you are (`git config --global user.name` / `user.email`)
 
 Prebuilt binaries for Windows, macOS (Apple Silicon and Intel) and Linux are on the [Releases page](https://github.com/plaintextlab/scrap/releases). Every push to `main` is tested and published automatically as a new release (`v<major>.<minor>.<build>`; bump major/minor in `Cargo.toml`).
 
-**Android:** each release also has an `android-arm64.apk`: a native Material 3 app (Jetpack Compose, dynamic colour) on the same Rust core. Notes live in `Android/data/dev.plaintextlab.scrap/files/vault`. Git sync isn't available on Android yet. Unless the repo has a signing key configured (`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` secrets, key alias `scrap`), uninstall the previous version before installing a new one.
+**Android:** each release also has an `android-arm64.apk`: a native Material 3 app (Jetpack Compose) on the same Rust core, with:
+
+- GitHub sync over HTTPS with a personal access token (stored encrypted with the Android Keystore). Syncs on open, when you leave the app, on pull-to-refresh and optionally hourly in the background. When the same note changed on two devices, both versions are kept (`Note (conflict).md`) instead of leaving conflict markers.
+- Settings: theme (system/light/dark), dynamic colour, text size, open notes in edit or read mode.
+- A formatting toolbar above the keyboard with undo/redo, sorting by name or last edited, and "Share to Scrap" from other apps.
+
+Notes live in `Android/data/dev.plaintextlab.scrap/files/vault`. Unless the repo has a signing key configured (`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` secrets, key alias `scrap`), uninstall the previous version before installing a new one.
 
 The macOS build is unsigned: on first launch, right-click → Open (or run `xattr -d com.apple.quarantine scrap`).
 

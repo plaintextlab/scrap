@@ -17,6 +17,8 @@ pub struct Note {
     pub content: String,
     /// Targets of `[[wiki links]]` found in the content.
     pub links: Vec<String>,
+    /// Last modification time in milliseconds since the Unix epoch (0 if unknown).
+    pub modified: u64,
 }
 
 #[derive(Default)]
@@ -91,6 +93,7 @@ impl Vault {
                 let note = &mut self.notes[i];
                 note.content = text.to_string();
                 note.links = extract_links(text);
+                note.modified = now_millis();
                 self.generation += 1;
             }
             None => self.rescan(),
@@ -239,19 +242,15 @@ impl Vault {
     }
 }
 
+/// Contents of the note created in a brand-new vault.
+pub const WELCOME: &str = "# Welcome to Scrap\n\nNotes are plain **markdown** files. Link notes with [[Ideas]], \
+then open the link to create that note.\n\n- [ ] Write something\n";
+
 /// Creates the vault folder with a welcome note the first time it is used.
 pub fn seed(root: &Path) -> io::Result<()> {
     fs::create_dir_all(root)?;
     if fs::read_dir(root)?.next().is_none() {
-        fs::write(
-            root.join("Welcome.md"),
-            "# Welcome to Scrap
-
-Notes are plain **markdown** files. Link notes with [[Ideas]],              then open the link to create that note.
-
-- [ ] Write something
-",
-        )?;
+        fs::write(root.join("Welcome.md"), WELCOME)?;
     }
     Ok(())
 }
@@ -277,7 +276,8 @@ fn scan_dir(abs: &Path, rel: &str, dir: &mut Dir, notes: &mut Vec<Note>) {
                 .map(|b| String::from_utf8_lossy(&b).into_owned())
                 .unwrap_or_default();
             dir.notes.push(notes.len());
-            notes.push(Note { links: extract_links(&content), name: stem(&name), rel: child_rel, content });
+            let modified = entry.metadata().ok().and_then(|m| m.modified().ok()).map_or(0, millis);
+            notes.push(Note { links: extract_links(&content), name: stem(&name), rel: child_rel, content, modified });
         }
     }
 }
@@ -362,6 +362,14 @@ pub fn fuzzy(hay: &str, needle: &str) -> Option<i32> {
         score += 50;
     }
     Some(score - chars.len() as i32 / 4)
+}
+
+fn millis(t: std::time::SystemTime) -> u64 {
+    t.duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+}
+
+fn now_millis() -> u64 {
+    millis(std::time::SystemTime::now())
 }
 
 pub fn join(folder: &str, name: &str) -> String {

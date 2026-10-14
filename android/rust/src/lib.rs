@@ -13,6 +13,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+mod sync;
+
 static VAULT: Mutex<Option<Vault>> = Mutex::new(None);
 
 type Res = Result<String, String>;
@@ -156,3 +158,72 @@ export!(Java_dev_plaintextlab_scrap_Core_search(query) {
 export!(Java_dev_plaintextlab_scrap_Core_preview(text) {
     Ok(wikilinks_to_md(&text, LinkStyle::Encoded))
 });
+
+// Commits, pulls and pushes the vault. `config` is JSON with url, username, token, branch,
+// name, email, device and caFile (where to write the CA bundle on Android).
+export!(Java_dev_plaintextlab_scrap_Core_sync(config) {
+    let c: serde_json::Value = serde_json::from_str(&config).map_err(|e| e.to_string())?;
+    let field = |k: &str| c[k].as_str().unwrap_or_default().trim().to_string();
+    let cfg = sync::Config {
+        url: field("url"),
+        username: field("username"),
+        token: field("token"),
+        branch: if field("branch").is_empty() { "main".into() } else { field("branch") },
+        name: field("name"),
+        email: field("email"),
+        device: field("device"),
+    };
+    if cfg.url.is_empty() {
+        return Err("No repository configured".into());
+    }
+    #[cfg(target_os = "android")]
+    tls::init(std::path::Path::new(&field("caFile")))?;
+    with_vault(|v| {
+        let root = v.root.clone();
+        let result = sync::sync(&root, &cfg);
+        v.rescan();
+        result
+    })
+});
+
+/// libgit2 on Android: point OpenSSL at the system CA certificates and relax checks that
+/// assume a desktop environment.
+#[cfg(target_os = "android")]
+mod tls {
+    use std::fs;
+    use std::path::Path;
+    use std::sync::OnceLock;
+
+    static INIT: OnceLock<Result<(), String>> = OnceLock::new();
+
+    pub fn init(bundle: &Path) -> Result<(), String> {
+        INIT.get_or_init(|| {
+            // Android keeps one PEM file per CA; OpenSSL wants a single bundle.
+            let mut pem = Vec::new();
+            for dir in ["/apex/com.android.conscrypt/cacerts", "/system/etc/security/cacerts"] {
+                for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
+                    if let Ok(bytes) = fs::read(entry.path()) {
+                        pem.extend_from_slice(&bytes);
+                        pem.push(b'\n');
+                    }
+                }
+            }
+            if pem.is_empty() {
+                return Err("No system CA certificates found".into());
+            }
+            fs::write(bundle, &pem).map_err(|e| e.to_string())?;
+            let err = |e: git2::Error| e.message().to_string();
+            // SAFETY: runs once, before any other libgit2 use in this process.
+            unsafe {
+                git2::opts::set_ssl_cert_file(bundle).map_err(err)?;
+                // App storage may report a different owner than the app's uid.
+                git2::opts::set_verify_owner_validation(false).map_err(err)?;
+                for level in [git2::ConfigLevel::System, git2::ConfigLevel::XDG, git2::ConfigLevel::Global] {
+                    let _ = git2::opts::set_search_path(level, "");
+                }
+            }
+            Ok(())
+        })
+        .clone()
+    }
+}

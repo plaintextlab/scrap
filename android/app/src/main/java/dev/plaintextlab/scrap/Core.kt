@@ -23,4 +23,5 @@ object Core {
     @JvmStatic external fun outgoing(text: String): String
     @JvmStatic external fun search(query: String): String
     @JvmStatic external fun preview(text: String): String
+    @JvmStatic external fun sync(config: String): String
 }

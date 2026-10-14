@@ -16,11 +16,10 @@ import dev.plaintextlab.scrap.VaultViewModel
 @Composable
 fun ScrapApp(vm: VaultViewModel) {
     val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(vm.error) {
-        vm.error?.let {
-            snackbar.showSnackbar(it)
-            vm.error = null
-        }
+    LaunchedEffect(vm.message) {
+        val text = vm.message ?: return@LaunchedEffect
+        snackbar.showSnackbar(text)
+        vm.message = null
     }
     BackHandler(enabled = vm.stack.size > 1) { vm.back() }
 
@@ -33,6 +32,8 @@ fun ScrapApp(vm: VaultViewModel) {
             is Screen.Browse -> BrowseScreen(vm, screen.folder, snackbar)
             is Screen.Note -> NoteScreen(vm, screen.rel, snackbar)
             Screen.Search -> SearchScreen(vm)
+            Screen.Settings -> SettingsScreen(vm, snackbar)
+            Screen.SyncSetup -> SyncSetupScreen(vm, snackbar)
         }
     }
 }

@@ -15,20 +15,33 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
 
-class VaultViewModel(app: Application) : AndroidViewModel(app) {
+class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
+    private val store = SettingsStore(app)
+
     /** Navigation back stack; the last entry is on screen. */
     val stack = mutableStateListOf<Screen>(Screen.Browse(""))
     val screen: Screen get() = stack.last()
 
+    var settings by mutableStateOf(store.load())
+        private set
     var ready by mutableStateOf(false)
         private set
     var folders by mutableStateOf(emptyList<String>())
         private set
     var notes by mutableStateOf(emptyList<NoteRef>())
         private set
-    var error by mutableStateOf<String?>(null)
+
+    /** One-off message for the snackbar. */
+    var message by mutableStateOf<String?>(null)
+
+    var syncing by mutableStateOf(false)
+        private set
+    var syncStatus by mutableStateOf(store.lastSync())
+        private set
+
+    /** Something changed locally since the last successful sync. */
+    private var unsynced = false
 
     // The open note.
     var noteRel by mutableStateOf<String?>(null)
@@ -42,11 +55,11 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
     private var saveJob: Job? = null
 
     init {
-        val base = app.getExternalFilesDir(null) ?: app.filesDir
         launch {
-            io { Core.open(File(base, "vault").path) }
+            io { Vault.ensureOpen(app) }
             reload()
             ready = true
+            if (settings.sync.configured && settings.sync.auto) sync(quiet = true)
         }
     }
 
@@ -54,7 +67,7 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
         try {
             block()
         } catch (e: Exception) {
-            error = e.message ?: "Something went wrong"
+            message = e.message ?: "Something went wrong"
         }
     }
 
@@ -65,27 +78,122 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
         val f = json.getJSONArray("folders")
         val n = json.getJSONArray("notes")
         folders = f.map { f.getString(it) }
-        notes = n.map { n.getJSONObject(it).let { o -> NoteRef(o.getString("rel"), o.getString("name")) } }
+        notes = n.map {
+            n.getJSONObject(it).let { o -> NoteRef(o.getString("rel"), o.getString("name"), o.optLong("modified")) }
+        }
     }
 
-    /** Picks up edits made outside the app (file managers, USB). */
-    fun refreshFromDisk() = launch {
-        if (!ready) return@launch
+    /** Picks up changes made outside the app (sync, file managers, USB). */
+    private suspend fun reloadFromDisk() {
         io { Core.rescan() }
         reload()
         val rel = noteRel
         if (rel != null && noteLoaded && noteText == savedText) {
-            val text = io { Core.read(rel) }
+            val text = runCatching { io { Core.read(rel) } }.getOrNull()
             if (noteRel == rel && noteText == savedText) {
-                noteText = text
-                savedText = text
+                if (text == null) {
+                    // Deleted elsewhere.
+                    stack.removeAll { it is Screen.Note && it.rel == rel }
+                    if (stack.isEmpty()) stack.add(Screen.Browse(""))
+                    noteRel = null
+                    noteLoaded = false
+                } else {
+                    noteText = text
+                    savedText = text
+                }
             }
+        }
+    }
+
+    // ---- Lifecycle --------------------------------------------------------
+
+    fun onForeground() {
+        if (!ready) return
+        launch {
+            reloadFromDisk()
+            val last = store.lastSync()?.time ?: 0
+            val s = settings.sync
+            if (s.configured && s.auto && System.currentTimeMillis() - last > 60_000) sync(quiet = true)
+        }
+    }
+
+    fun onBackground() {
+        launch {
+            flush()
+            val s = settings.sync
+            // The process may be killed once we're in the background; let WorkManager push.
+            if (unsynced && s.configured && s.auto) {
+                Sync.soon(app)
+                unsynced = false
+            }
+        }
+    }
+
+    // ---- Settings ---------------------------------------------------------
+
+    fun updateSettings(change: (AppSettings) -> AppSettings) {
+        settings = change(settings)
+        store.save(settings)
+        Sync.schedulePeriodic(app, settings.sync.configured && settings.sync.background)
+    }
+
+    /** Saves the connection details and runs a first sync; returns to Settings on success. */
+    fun connect(sync: SyncSettings, token: String?) {
+        if (!token.isNullOrBlank()) store.setToken(token.trim())
+        updateSettings { it.copy(sync = sync.copy(hasToken = store.token() != null)) }
+        launch {
+            if (sync(quiet = false) && screen == Screen.SyncSetup) back()
+        }
+    }
+
+    fun disconnect() {
+        store.setToken(null)
+        store.clearSyncStatus()
+        syncStatus = null
+        updateSettings { it.copy(sync = SyncSettings()) }
+    }
+
+    // ---- Sync -------------------------------------------------------------
+
+    fun syncNow() {
+        launch { sync(quiet = false) }
+    }
+
+    /** Pull-to-refresh: sync if set up, otherwise just re-read the folder. */
+    fun refresh() {
+        launch {
+            if (settings.sync.configured) sync(quiet = false) else reloadFromDisk()
+        }
+    }
+
+    /** Returns whether the sync succeeded. Quiet syncs only report failures. */
+    private suspend fun sync(quiet: Boolean): Boolean {
+        if (!settings.sync.configured) {
+            if (!quiet) message = "Set up GitHub sync in Settings first"
+            return false
+        }
+        if (syncing) return false
+        syncing = true
+        return try {
+            flush()
+            val summary = Sync.run(app)
+            unsynced = false
+            reloadFromDisk()
+            if (!quiet || summary != "Already up to date") message = summary
+            true
+        } catch (e: Exception) {
+            message = "Sync failed: ${e.message}"
+            false
+        } finally {
+            syncing = false
+            syncStatus = store.lastSync()
         }
     }
 
     // ---- Navigation -------------------------------------------------------
 
     fun navigate(s: Screen) {
+        if (s == screen) return
         stack.add(s)
         onScreenChanged()
     }
@@ -119,7 +227,7 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
                 noteText = text
                 savedText = text
                 noteLoaded = true
-                editing = text.isBlank()
+                editing = text.isBlank() || settings.openInEdit
             }
         }
     }
@@ -144,12 +252,15 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
         if (!noteLoaded || text == savedText) return
         savedText = text
         io { Core.save(rel, text) }
+        unsynced = true
+        notes = notes.map { if (it.rel == rel) it.copy(modified = System.currentTimeMillis()) else it }
     }
 
     // ---- Vault operations -------------------------------------------------
 
     fun createNote(folder: String, name: String) = launch {
         val rel = io { Core.createNote(folder, name) }
+        unsynced = true
         reload()
         navigate(Screen.Note(rel))
     }
@@ -160,9 +271,26 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
         navigate(Screen.Browse(rel))
     }
 
+    /** Text shared from another app becomes a new note. */
+    fun importShared(text: String, subject: String?) = launch {
+        while (!ready) delay(50)
+        val title = subject?.takeIf { it.isNotBlank() }
+            ?: text.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.trimStart('#', ' ')?.take(60)
+            ?: "Shared note"
+        val rel = io {
+            Core.createNote("", title).also { Core.save(it, text) }
+        }
+        unsynced = true
+        reload()
+        stack.removeAll { it !is Screen.Browse || it.folder.isNotEmpty() }
+        if (stack.isEmpty()) stack.add(Screen.Browse(""))
+        navigate(Screen.Note(rel))
+    }
+
     fun rename(rel: String, name: String) = launch {
         flush()
         val newRel = io { Core.rename(rel, name) }
+        unsynced = true
         fun fix(p: String) = when {
             p == rel -> newRel
             p.startsWith("$rel/") -> newRel + p.removePrefix(rel)
@@ -172,18 +300,18 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
             stack[i] = when (val s = stack[i]) {
                 is Screen.Note -> Screen.Note(fix(s.rel))
                 is Screen.Browse -> Screen.Browse(fix(s.folder))
-                Screen.Search -> s
+                else -> s
             }
         }
         noteRel = noteRel?.let(::fix)
-        reload()
         // Links inside the open note may have been rewritten.
-        refreshFromDisk()
+        reloadFromDisk()
     }
 
     fun delete(rel: String) = launch {
         flush()
         io { Core.delete(rel) }
+        unsynced = true
         val gone = { p: String -> p == rel || p.startsWith("$rel/") }
         stack.removeAll {
             (it is Screen.Note && gone(it.rel)) || (it is Screen.Browse && it.folder.isNotEmpty() && gone(it.folder))
@@ -204,12 +332,15 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
             val clean = target.substringBefore('#').trim().removeSuffix(".md")
             if (clean.isEmpty()) return@launch
             rel = io { Core.createNote(parentOf(clean), nameOf(clean)) }
+            unsynced = true
             reload()
         }
         navigate(Screen.Note(rel))
     }
 
     // ---- Queries ----------------------------------------------------------
+
+    val vaultPath: String get() = Vault.dir(app).path
 
     suspend fun preview(text: String): String = io { Core.preview(text) }
 
