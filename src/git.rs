@@ -134,6 +134,11 @@ impl Git {
 }
 
 fn git(dir: Option<&Path>, args: &[&str]) -> Result<String, String> {
+    git_bytes(dir, args).map(|out| String::from_utf8_lossy(&out).trim_end().to_string())
+}
+
+/// Runs git and returns its raw standard output.
+fn git_bytes(dir: Option<&Path>, args: &[&str]) -> Result<Vec<u8>, String> {
     let mut cmd = Command::new("git");
     cmd.args(["-c", "core.quotepath=false"]);
     if let Some(dir) = dir {
@@ -151,10 +156,10 @@ fn git(dir: Option<&Path>, args: &[&str]) -> Result<String, String> {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     let out = cmd.output().map_err(|e| format!("Could not run git: {e}"))?;
-    let stdout = String::from_utf8_lossy(&out.stdout).trim_end().to_string();
     if out.status.success() {
-        Ok(stdout)
+        Ok(out.stdout)
     } else {
+        let stdout = String::from_utf8_lossy(&out.stdout).trim_end().to_string();
         let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
         Err(if !stderr.is_empty() {
             stderr
@@ -196,7 +201,9 @@ pub fn status(root: &Path) -> Status {
     st
 }
 
-/// Commit everything, rebase onto the remote, push.
+/// Commit everything, merge the remote branch, push. When the same file changed on both
+/// sides, both versions are kept (like the Android app): ours stays at the original path
+/// and theirs is saved next to it as "Note (conflict).md".
 pub fn sync(root: &Path) -> Result<String, String> {
     let mut done = Vec::new();
 
@@ -237,14 +244,11 @@ pub fn sync(root: &Path) -> Result<String, String> {
         } else {
             let behind = count(root, &format!("HEAD..{upstream}"));
             if behind > 0 {
-                if let Err(e) = run(root, &["rebase", "-q", "--autostash", &upstream]) {
-                    let _ = run(root, &["rebase", "--abort"]);
-                    return Err(format!(
-                        "Sync stopped: local and remote changes conflict. Nothing was lost; \
-                         your changes are committed locally. Resolve with git in a terminal.\n\n{e}"
-                    ));
+                let kept = merge(root, &upstream)?;
+                if kept > 0 {
+                    done.push(format!("kept both versions of {kept} conflicting note{}", plural(kept)));
                 }
-                done.push(format!("pulled {behind} commit{}", if behind == 1 { "" } else { "s" }));
+                done.push(format!("pulled {behind} commit{}", plural(behind as usize)));
             }
         }
     }
@@ -257,6 +261,94 @@ pub fn sync(root: &Path) -> Result<String, String> {
         }
     }
     Ok(summary(done))
+}
+
+/// Merges `upstream` into HEAD, resolving conflicts by keeping both versions.
+/// Returns how many files had conflicts.
+fn merge(root: &Path, upstream: &str) -> Result<usize, String> {
+    let Err(merge_error) = run(root, &["merge", "-q", "--no-edit", "-m", "Merge remote changes", upstream]) else {
+        return Ok(0);
+    };
+    // No merge in progress means it failed before getting to conflicts.
+    if run(root, &["rev-parse", "-q", "--verify", "MERGE_HEAD"]).is_err() {
+        return Err(format!("Couldn't merge the remote changes:\n{merge_error}"));
+    }
+    let resolved = resolve_conflicts(root);
+    let unmerged = run(root, &["diff", "--name-only", "--diff-filter=U"]).unwrap_or_default();
+    match resolved {
+        Ok(kept) if unmerged.trim().is_empty() => {
+            let msg = format!("Merge remote changes (kept both versions of {kept} note{})", plural(kept));
+            run(root, &["commit", "-q", "--no-edit", "-m", &msg])?;
+            Ok(kept)
+        }
+        other => {
+            let _ = run(root, &["merge", "--abort"]);
+            let why = other.err().unwrap_or_else(|| "some files could not be merged".into());
+            Err(format!(
+                "Sync stopped: the remote changes couldn't be merged. Nothing was lost; your changes are \
+                 committed locally.\n\n{why}"
+            ))
+        }
+    }
+}
+
+fn resolve_conflicts(root: &Path) -> Result<usize, String> {
+    // "<mode> <object> <stage>\t<path>" for each unmerged path and stage.
+    let listing = run(root, &["ls-files", "-u", "-z"])?;
+    let mut stages: std::collections::BTreeMap<String, Vec<u8>> = Default::default();
+    for entry in listing.split('\0').filter(|e| !e.is_empty()) {
+        let Some((meta, path)) = entry.split_once('\t') else { continue };
+        let stage = meta.split_whitespace().nth(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+        stages.entry(path.to_string()).or_default().push(stage);
+    }
+    let mut kept = 0;
+    for (path, st) in stages {
+        let (ours, theirs) = (st.contains(&2), st.contains(&3));
+        if ours && theirs {
+            let copy = free_name(&path, "conflict", |p| root.join(p).exists());
+            let their_text = git_bytes(Some(root), &["show", &format!(":3:{path}")])?;
+            std::fs::write(root.join(&copy), their_text).map_err(|e| e.to_string())?;
+            run(root, &["checkout", "--ours", "--", &path])?;
+            run(root, &["add", "--", &path, &copy])?;
+            kept += 1;
+        } else if ours {
+            // Edited here, deleted there: keep the edit.
+            run(root, &["checkout", "--ours", "--", &path])?;
+            run(root, &["add", "--", &path])?;
+        } else if theirs {
+            // Deleted here, edited there: keep the edit.
+            run(root, &["checkout", "--theirs", "--", &path])?;
+            run(root, &["add", "--", &path])?;
+        } else {
+            // Deleted on both sides.
+            run(root, &["rm", "-q", "--cached", "--ignore-unmatch", "--", &path])?;
+        }
+    }
+    Ok(kept)
+}
+
+/// "notes/Idea.md" -> "notes/Idea (tag).md", numbered if that is taken.
+fn free_name(rel: &str, tag: &str, taken: impl Fn(&str) -> bool) -> String {
+    let (stem, ext) = match rel.rsplit_once('.') {
+        Some((s, e)) if !e.contains('/') => (s, format!(".{e}")),
+        _ => (rel, String::new()),
+    };
+    let mut n = 1;
+    loop {
+        let candidate = if n == 1 { format!("{stem} ({tag}){ext}") } else { format!("{stem} ({tag} {n}){ext}") };
+        if !taken(&candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
+fn plural(n: usize) -> &'static str {
+    if n == 1 {
+        ""
+    } else {
+        "s"
+    }
 }
 
 fn init(root: &Path) -> Result<String, String> {
@@ -373,15 +465,27 @@ mod tests {
         let st = status(&b);
         assert!(st.is_repo && st.changes == 0 && st.ahead == 0 && st.remote.is_some());
 
-        // Same line edited on both sides: sync stops cleanly, nothing lost.
+        // Same line edited on both sides: both versions survive on both machines.
         fs::write(a.join("one.md"), "edited on a\n").unwrap();
         sync(&a).unwrap();
         fs::write(b.join("one.md"), "edited on b\n").unwrap();
-        let err = sync(&b).unwrap_err();
-        assert!(err.contains("conflict"), "{err}");
-        assert!(!b.join(".git/rebase-merge").exists() && !b.join(".git/rebase-apply").exists());
+        let msg = sync(&b).unwrap();
+        assert!(msg.contains("kept both versions of 1"), "{msg}");
         assert_eq!(fs::read_to_string(b.join("one.md")).unwrap(), "edited on b\n");
-        assert_eq!(status(&b).ahead, 1);
+        assert_eq!(fs::read_to_string(b.join("one (conflict).md")).unwrap(), "edited on a\n");
+        assert!(!b.join(".git/MERGE_HEAD").exists());
+        sync(&a).unwrap();
+        assert_eq!(fs::read_to_string(a.join("one.md")).unwrap(), "edited on b\n");
+        assert_eq!(fs::read_to_string(a.join("one (conflict).md")).unwrap(), "edited on a\n");
+
+        // Deleted on one side, edited on the other: the edit is kept.
+        fs::remove_file(a.join("two.md")).unwrap();
+        sync(&a).unwrap();
+        fs::write(b.join("two.md"), "still needed\n").unwrap();
+        sync(&b).unwrap();
+        assert_eq!(fs::read_to_string(b.join("two.md")).unwrap(), "still needed\n");
+        let st = status(&b);
+        assert_eq!((st.changes, st.ahead, st.behind), (0, 0, 0));
     }
 
     #[test]

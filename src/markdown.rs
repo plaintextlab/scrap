@@ -1,35 +1,24 @@
 //! Markdown in two flavours: syntax highlighting for the editor (the raw text is
-//! kept intact so the cursor maps 1:1) and a rendered preview.
+//! kept intact so the cursor maps 1:1) and a rendered reader view.
 
+use crate::theme::{self, icon, Palette};
 use eframe::egui::{
-    self, text::LayoutJob, Color32, FontFamily, FontId, RichText, Stroke, TextFormat, Ui, Visuals,
+    self, text::LayoutJob, Color32, CornerRadius, FontFamily, FontId, Margin, RichText, Stroke, TextFormat, Ui,
+    Visuals,
 };
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag};
 use scrap_core::links::{wikilinks_to_md, LinkStyle};
+use std::path::Path;
 
 pub use scrap_core::links::link_at;
 
-const HEADING_SCALE: [f32; 6] = [1.7, 1.45, 1.25, 1.1, 1.0, 0.95];
+const HEADING_SCALE: [f32; 6] = [1.75, 1.4, 1.2, 1.08, 1.0, 0.95];
 
-struct Colors {
-    text: Color32,
-    strong: Color32,
-    weak: Color32,
-    link: Color32,
-    accent: Color32,
-    code_bg: Color32,
-}
-
-impl Colors {
-    fn new(v: &Visuals) -> Self {
-        Colors {
-            text: v.text_color(),
-            strong: v.strong_text_color(),
-            weak: v.weak_text_color(),
-            link: v.hyperlink_color,
-            accent: if v.dark_mode { Color32::from_rgb(0xa8, 0x8b, 0xfa) } else { Color32::from_rgb(0x6d, 0x4a, 0xd8) },
-            code_bg: v.code_bg_color,
-        }
+fn colors(v: &Visuals) -> Palette {
+    if v.dark_mode {
+        theme::DARK
+    } else {
+        theme::LIGHT
     }
 }
 
@@ -37,8 +26,12 @@ fn prop(size: f32, color: Color32) -> TextFormat {
     TextFormat { font_id: FontId::proportional(size), color, ..Default::default() }
 }
 
+fn bold(size: f32, color: Color32) -> TextFormat {
+    TextFormat { font_id: FontId::new(size, theme::semibold()), color, ..Default::default() }
+}
+
 fn mono(size: f32, color: Color32, background: Color32) -> TextFormat {
-    TextFormat { font_id: FontId::monospace(size * 0.9), color, background, ..Default::default() }
+    TextFormat { font_id: FontId::monospace(size * 0.88), color, background, ..Default::default() }
 }
 
 // ---------------------------------------------------------------------------
@@ -46,7 +39,7 @@ fn mono(size: f32, color: Color32, background: Color32) -> TextFormat {
 // ---------------------------------------------------------------------------
 
 pub fn highlight(text: &str, visuals: &Visuals, size: f32) -> LayoutJob {
-    let c = Colors::new(visuals);
+    let c = colors(visuals);
     let base = prop(size, c.text);
     let mut job = LayoutJob::default();
     let mut in_fence = false;
@@ -57,7 +50,7 @@ pub fn highlight(text: &str, visuals: &Visuals, size: f32) -> LayoutJob {
 
         if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
             in_fence = !in_fence;
-            job.append(line, 0.0, mono(size, c.weak, Color32::TRANSPARENT));
+            job.append(line, 0.0, mono(size, c.faint, Color32::TRANSPARENT));
             continue;
         }
         if in_fence {
@@ -69,20 +62,20 @@ pub fn highlight(text: &str, visuals: &Visuals, size: f32) -> LayoutJob {
         if (1..=6).contains(&hashes) && trimmed[hashes..].starts_with([' ', '\t']) {
             let scaled = size * HEADING_SCALE[hashes - 1];
             let marker = indent + hashes;
-            job.append(&line[..marker], 0.0, prop(scaled, c.weak));
-            inline(&mut job, &line[marker..], &prop(scaled, c.strong), &c);
+            job.append(&line[..marker], 0.0, prop(scaled, c.faint));
+            inline(&mut job, &line[marker..], &bold(scaled, c.text), &c);
             continue;
         }
 
         if is_rule(trimmed) {
-            job.append(line, 0.0, prop(size, c.weak));
+            job.append(line, 0.0, prop(size, c.faint));
             continue;
         }
 
         let marker = indent + list_prefix(trimmed);
         let mut body = base.clone();
         if trimmed.starts_with('>') {
-            body.color = c.weak;
+            body.color = c.muted;
             body.italics = true;
         }
         if marker > indent {
@@ -116,7 +109,7 @@ fn list_prefix(t: &str) -> usize {
     0
 }
 
-fn inline(job: &mut LayoutJob, s: &str, f: &TextFormat, c: &Colors) {
+fn inline(job: &mut LayoutJob, s: &str, f: &TextFormat, c: &Palette) {
     let mut i = 0;
     let mut plain = 0;
     while i < s.len() {
@@ -143,15 +136,15 @@ fn inline(job: &mut LayoutJob, s: &str, f: &TextFormat, c: &Colors) {
 type Parts = Vec<(usize, usize, TextFormat)>;
 
 /// Recognises one inline token starting at byte `i`; returns its end and styled pieces.
-fn token(s: &str, i: usize, f: &TextFormat, c: &Colors) -> Option<(usize, Parts)> {
+fn token(s: &str, i: usize, f: &TextFormat, c: &Palette) -> Option<(usize, Parts)> {
     let rest = &s[i..];
-    let weak = TextFormat { color: c.weak, ..f.clone() };
-    let link = TextFormat { color: c.link, ..f.clone() };
+    let weak = TextFormat { color: c.faint, ..f.clone() };
+    let link = TextFormat { color: c.accent, ..f.clone() };
 
     if let Some(after) = rest.strip_prefix('`') {
         let close = after.find('`')? + 1;
         let code = TextFormat {
-            font_id: FontId::monospace(f.font_id.size * 0.9),
+            font_id: FontId::monospace(f.font_id.size * 0.88),
             background: c.code_bg,
             ..f.clone()
         };
@@ -173,9 +166,10 @@ fn token(s: &str, i: usize, f: &TextFormat, c: &Colors) -> Option<(usize, Parts)
             let (a, z) = (i + 2, i + 2 + close);
             let mut inner = f.clone();
             if marker == "~~" {
-                inner.strikethrough = Stroke::new(1.0_f32, c.weak);
+                inner.strikethrough = Stroke::new(1.0_f32, c.muted);
+                inner.color = c.muted;
             } else {
-                inner.color = c.strong;
+                inner.font_id = FontId::new(f.font_id.size, theme::semibold());
             }
             return Some((z + 2, vec![(i, a, weak.clone()), (a, z, inner), (z, z + 2, weak)]));
         }
@@ -186,15 +180,22 @@ fn token(s: &str, i: usize, f: &TextFormat, c: &Colors) -> Option<(usize, Parts)
         let z = i + close;
         return Some((z + 1, vec![(i, i + 1, weak.clone()), (i + 1, z, italic), (z, z + 1, weak)]));
     }
-    if rest.starts_with('[') {
+    // Links and images: [text](url), ![alt](url).
+    let bang = rest.starts_with("![");
+    if rest.starts_with('[') || bang {
+        let open = usize::from(bang);
         let mid = rest.find("](")?;
-        if rest[1..mid].contains('[') {
+        if rest[open + 1..mid].contains('[') {
             return None;
         }
         let end = mid + rest[mid..].find(')')?;
         return Some((
             i + end + 1,
-            vec![(i, i + 1, weak.clone()), (i + 1, i + mid, link), (i + mid, i + end + 1, weak)],
+            vec![
+                (i, i + open + 1, weak.clone()),
+                (i + open + 1, i + mid, link),
+                (i + mid, i + end + 1, weak),
+            ],
         ));
     }
     if rest.starts_with('#') && (i == 0 || s.as_bytes()[i - 1] == b' ') {
@@ -209,19 +210,26 @@ fn token(s: &str, i: usize, f: &TextFormat, c: &Colors) -> Option<(usize, Parts)
 }
 
 // ---------------------------------------------------------------------------
-// Preview
+// Reader
 // ---------------------------------------------------------------------------
 
+/// Where relative image links in a note point.
+pub struct Images<'a> {
+    pub root: &'a Path,
+    pub note_rel: &'a str,
+}
+
 /// Renders markdown; returns the URL of a clicked link, if any.
-pub fn preview(ui: &mut Ui, src: &str, size: f32) -> Option<String> {
+pub fn preview(ui: &mut Ui, src: &str, size: f32, images: &Images) -> Option<String> {
     let md = wikilinks_to_md(src, LinkStyle::AngleBrackets);
     let opts = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS;
-    let mut r = Renderer::new(size);
+    ui.spacing_mut().item_spacing.y = 4.0;
+    let mut r = Renderer::new(size, colors(ui.visuals()));
     for event in Parser::new_ext(&md, opts) {
-        r.event(ui, event);
+        r.event(ui, event, images);
     }
     r.flush(ui);
     r.clicked
@@ -234,6 +242,7 @@ struct SpanStyle {
     strike: bool,
     code: bool,
     link: Option<String>,
+    color: Option<Color32>,
 }
 
 struct Span {
@@ -252,6 +261,7 @@ enum Open {
     Strong,
     Strike,
     Link,
+    Image(String),
     Table,
     Row,
     Cell,
@@ -267,6 +277,7 @@ struct Table {
 
 struct Renderer {
     size: f32,
+    c: Palette,
     spans: Vec<Span>,
     style: SpanStyle,
     stack: Vec<Open>,
@@ -282,9 +293,10 @@ struct Renderer {
 }
 
 impl Renderer {
-    fn new(size: f32) -> Self {
+    fn new(size: f32, c: Palette) -> Self {
         Renderer {
             size,
+            c,
             spans: Vec::new(),
             style: SpanStyle::default(),
             stack: Vec::new(),
@@ -307,10 +319,10 @@ impl Renderer {
         self.spans.push(Span { text: text.to_string(), style: self.style.clone() });
     }
 
-    fn event(&mut self, ui: &mut Ui, event: Event) {
+    fn event(&mut self, ui: &mut Ui, event: Event, images: &Images) {
         match event {
             Event::Start(tag) => self.start(ui, tag),
-            Event::End(_) => self.end(ui),
+            Event::End(_) => self.end(ui, images),
             Event::Text(t) => match &mut self.code {
                 Some(code) => code.push_str(&t),
                 None => self.push(&t),
@@ -329,9 +341,24 @@ impl Renderer {
             Event::HardBreak => self.push("\n"),
             Event::Rule => {
                 self.flush(ui);
-                ui.separator();
+                ui.add_space(self.size * 0.4);
+                let r = ui.available_rect_before_wrap();
+                ui.painter().hline(r.x_range(), r.top(), Stroke::new(1.0, self.c.border));
+                ui.add_space(self.size * 0.6);
             }
-            Event::TaskListMarker(done) => self.push(if done { "âœ… " } else { "â¬œ " }),
+            Event::TaskListMarker(done) => {
+                if self.skip == 0 {
+                    // The list bullet is replaced by the checkbox.
+                    self.bullet = Some(String::new());
+                    let (glyph, color) = if done { (icon::CHECK_SQUARE, self.c.accent) } else { (icon::SQUARE, self.c.faint) };
+                    let style = SpanStyle { color: Some(color), ..SpanStyle::default() };
+                    self.spans.push(Span { text: format!("{glyph}  "), style });
+                    if done {
+                        self.style.strike = true;
+                        self.style.color = Some(self.c.muted);
+                    }
+                }
+            }
             Event::FootnoteReference(t) => self.push(&format!("[^{t}]")),
             _ => {}
         }
@@ -351,7 +378,7 @@ impl Renderer {
                     HeadingLevel::H6 => 6,
                 };
                 self.heading = Some(level);
-                ui.add_space(self.size * 0.5);
+                ui.add_space(self.size * if level <= 2 { 0.9 } else { 0.6 });
                 Open::Heading(level)
             }
             Tag::BlockQuote(..) => {
@@ -373,11 +400,11 @@ impl Renderer {
                 self.flush(ui);
                 self.bullet = Some(match self.lists.last_mut() {
                     Some(Some(n)) => {
-                        let b = format!("{n}. ");
+                        let b = format!("{n}.  ");
                         *n += 1;
                         b
                     }
-                    _ => "â€¢  ".to_string(),
+                    _ => "•  ".to_string(),
                 });
                 Open::Item
             }
@@ -398,9 +425,10 @@ impl Renderer {
                 Open::Link
             }
             Tag::Image { dest_url, .. } => {
-                self.style.link = Some(dest_url.to_string());
-                self.push("ðŸ–¼ ");
-                Open::Link
+                // Images are drawn as blocks of their own; their alt text is skipped.
+                self.flush(ui);
+                self.skip += 1;
+                Open::Image(dest_url.to_string())
             }
             Tag::Table(_) => {
                 self.flush(ui);
@@ -421,19 +449,21 @@ impl Renderer {
         self.stack.push(open);
     }
 
-    fn end(&mut self, ui: &mut Ui) {
+    fn end(&mut self, ui: &mut Ui, images: &Images) {
         match self.stack.pop() {
             Some(Open::Para) => {
                 self.flush(ui);
-                ui.add_space(if self.lists.is_empty() { self.size * 0.5 } else { 2.0 });
+                ui.add_space(if self.lists.is_empty() { self.size * 0.7 } else { 2.0 });
             }
             Some(Open::Heading(level)) => {
                 self.flush(ui);
                 self.heading = None;
                 if level <= 2 {
-                    ui.separator();
+                    ui.add_space(4.0);
+                    let r = ui.available_rect_before_wrap();
+                    ui.painter().hline(r.x_range(), r.top(), Stroke::new(1.0, self.c.border));
                 }
-                ui.add_space(self.size * 0.3);
+                ui.add_space(self.size * 0.45);
             }
             Some(Open::Quote) => {
                 self.flush(ui);
@@ -443,10 +473,14 @@ impl Renderer {
                 self.flush(ui);
                 self.lists.pop();
                 if self.lists.is_empty() {
-                    ui.add_space(self.size * 0.5);
+                    ui.add_space(self.size * 0.6);
                 }
             }
-            Some(Open::Item) => self.flush(ui),
+            Some(Open::Item) => {
+                self.flush(ui);
+                self.style.strike = false;
+                self.style.color = None;
+            }
             Some(Open::Code) => {
                 let code = self.code.take().unwrap_or_default();
                 self.code_block(ui, &code);
@@ -455,6 +489,10 @@ impl Renderer {
             Some(Open::Strong) => self.style.strong = false,
             Some(Open::Strike) => self.style.strike = false,
             Some(Open::Link) => self.style.link = None,
+            Some(Open::Image(url)) => {
+                self.skip = self.skip.saturating_sub(1);
+                self.image(ui, &url, images);
+            }
             Some(Open::Cell) => {
                 let cell = std::mem::take(&mut self.spans);
                 if let Some(t) = &mut self.table {
@@ -477,32 +515,61 @@ impl Renderer {
         }
     }
 
+    fn image(&mut self, ui: &mut Ui, url: &str, images: &Images) {
+        let local = scrap_core::attachments::resolve(images.note_rel, url).map(|rel| images.root.join(rel));
+        match local {
+            Some(path) if path.exists() => {
+                ui.add_space(4.0);
+                let uri = crate::attach::file_uri(&path);
+                let width = ui.available_width();
+                ui.add(
+                    egui::Image::new(uri)
+                        .fit_to_original_size(1.0)
+                        .max_width(width)
+                        .corner_radius(CornerRadius::same(10))
+                        .show_loading_spinner(true),
+                );
+                ui.add_space(self.size * 0.6);
+            }
+            _ => {
+                // Web images and missing files: show a link instead.
+                let label = format!("{}  {}", icon::IMAGE, url.rsplit('/').next().unwrap_or(url));
+                let resp = ui.link(RichText::new(label).size(self.size * 0.9));
+                if resp.on_hover_text(url).clicked() && url.contains("://") {
+                    self.clicked = Some(url.to_string());
+                }
+            }
+        }
+    }
+
     /// Lays out the pending inline spans as one wrapped block.
     fn flush(&mut self, ui: &mut Ui) {
         if self.table.is_some() {
             return;
         }
         let bullet = self.bullet.take();
-        if self.spans.is_empty() && bullet.is_none() {
+        if self.spans.is_empty() && bullet.as_deref().is_none_or(str::is_empty) {
             return;
         }
         let spans = std::mem::take(&mut self.spans);
-        let list_indent = self.lists.len().saturating_sub(1) as f32 * 20.0;
-        let indent = list_indent + self.quote as f32 * 14.0;
+        let list_indent = self.lists.len().saturating_sub(1) as f32 * 22.0;
+        let indent = list_indent + self.quote as f32 * 16.0;
         let size = self.heading.map_or(self.size, |h| self.size * HEADING_SCALE[h - 1]);
         let heading = self.heading.is_some();
         let quote = self.quote;
+        let c = self.c;
         let mut clicked = None;
 
         let resp = ui.horizontal(|ui| {
             ui.add_space(indent);
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
-                if let Some(b) = &bullet {
-                    ui.label(RichText::new(b).size(size).color(ui.visuals().weak_text_color()));
+                ui.spacing_mut().item_spacing.y = size * 0.3;
+                if let Some(b) = bullet.as_deref().filter(|b| !b.is_empty()) {
+                    ui.label(RichText::new(b).size(size).color(c.accent));
                 }
                 for span in &spans {
-                    if let Some(url) = span_ui(ui, span, size, heading, quote > 0) {
+                    if let Some(url) = span_ui(ui, span, size, heading, quote > 0, &c) {
                         clicked = Some(url);
                     }
                 }
@@ -510,10 +577,9 @@ impl Renderer {
         });
 
         let rect = resp.response.rect;
-        let stroke = Stroke::new(3.0_f32, ui.visuals().widgets.noninteractive.bg_stroke.color);
         for q in 0..quote {
-            let x = rect.left() + list_indent + q as f32 * 14.0 + 3.0;
-            ui.painter().vline(x, rect.y_range(), stroke);
+            let x = rect.left() + list_indent + q as f32 * 16.0 + 3.0;
+            ui.painter().vline(x, rect.y_range(), Stroke::new(3.0, c.accent.gamma_multiply(0.45)));
         }
         if clicked.is_some() {
             self.clicked = clicked;
@@ -521,71 +587,80 @@ impl Renderer {
     }
 
     fn code_block(&self, ui: &mut Ui, code: &str) {
-        egui::Frame::default()
-            .fill(ui.visuals().code_bg_color)
-            .inner_margin(8.0)
+        egui::Frame::new()
+            .fill(self.c.code_bg)
+            .stroke(Stroke::new(1.0, self.c.border))
+            .corner_radius(CornerRadius::same(8))
+            .inner_margin(Margin::symmetric(14, 12))
             .show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
                 ui.label(
                     RichText::new(code.trim_end_matches('\n'))
                         .family(FontFamily::Monospace)
-                        .size(self.size * 0.9),
+                        .size(self.size * 0.86),
                 );
             });
-        ui.add_space(self.size * 0.5);
+        ui.add_space(self.size * 0.7);
     }
 
     fn table_ui(&mut self, ui: &mut Ui, table: Table) {
         self.tables += 1;
         let size = self.size;
+        let c = self.c;
         let mut clicked = None;
-        egui::Grid::new(("md_table", self.tables))
-            .striped(true)
-            .spacing([16.0, 6.0])
+        egui::Frame::new()
+            .stroke(Stroke::new(1.0, c.border))
+            .corner_radius(CornerRadius::same(8))
+            .inner_margin(Margin::symmetric(12, 8))
             .show(ui, |ui| {
-                for (r, row) in table.rows.iter().enumerate() {
-                    for cell in row {
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 0.0;
-                            for span in cell {
-                                if let Some(url) = span_ui(ui, span, size, r == 0, false) {
-                                    clicked = Some(url);
+                egui::Grid::new(("md_table", self.tables)).spacing([24.0, 8.0]).show(ui, |ui| {
+                    for (r, row) in table.rows.iter().enumerate() {
+                        for cell in row {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 0.0;
+                                for span in cell {
+                                    if let Some(url) = span_ui(ui, span, size * 0.95, r == 0, false, &c) {
+                                        clicked = Some(url);
+                                    }
                                 }
-                            }
-                        });
+                            });
+                        }
+                        ui.end_row();
                     }
-                    ui.end_row();
-                }
+                });
             });
         if clicked.is_some() {
             self.clicked = clicked;
         }
-        ui.add_space(self.size * 0.5);
+        ui.add_space(self.size * 0.7);
     }
 }
 
-fn span_ui(ui: &mut Ui, span: &Span, size: f32, heading: bool, quote: bool) -> Option<String> {
+fn span_ui(ui: &mut Ui, span: &Span, size: f32, heading: bool, quote: bool, c: &Palette) -> Option<String> {
     let st = &span.style;
     let mut rt = RichText::new(&span.text).size(size);
     if heading || st.strong {
-        rt = rt.strong();
+        rt = rt.family(theme::semibold());
     }
     if st.emph || quote {
         rt = rt.italics();
     }
+    if quote {
+        rt = rt.color(c.muted);
+    }
     if st.strike {
         rt = rt.strikethrough();
     }
+    if let Some(color) = st.color {
+        rt = rt.color(color);
+    }
     if st.code {
-        rt = rt
-            .family(FontFamily::Monospace)
-            .size(size * 0.9)
-            .background_color(ui.visuals().code_bg_color);
+        rt = rt.family(FontFamily::Monospace).size(size * 0.86).background_color(c.code_bg);
     }
     match &st.link {
         Some(url) => {
             let hover = url.strip_prefix("wiki:").unwrap_or(url);
-            ui.link(rt).on_hover_text(hover).clicked().then(|| url.clone())
+            ui.link(rt.color(c.accent)).on_hover_text(hover).clicked().then(|| url.clone())
         }
         None => {
             ui.label(rt);
@@ -600,7 +675,7 @@ mod tests {
 
     #[test]
     fn highlighting_keeps_every_byte() {
-        let src = "# Title **x**\n- [ ] task with `code` and [[Link|alias]]\n> quote *em*\n```rust\nlet a = 1;\n```\n1. [md](http://x) #tag ~~gone~~ é**ü**\n**unclosed and [broken\n";
+        let src = "# Title **x**\n- [ ] task with `code` and [[Link|alias]]\n> quote *em*\n```rust\nlet a = 1;\n```\n1. [md](http://x) ![](a.png) #tag ~~gone~~ é**ü**\n**unclosed and [broken\n";
         let job = highlight(src, &Visuals::dark(), 14.0);
         assert_eq!(job.text, src);
     }

@@ -10,7 +10,15 @@ license = "MIT"
 
 [dependencies]
 scrap-core = { path = "core" }
-eframe = { version = "0.31", features = ["persistence"] }
+# OpenGL (glow) renderer: quick to start and small, unlike the default wgpu.
+eframe = { version = "0.36", default-features = false, features = [
+    "accesskit", "default_fonts", "glow", "links", "persistence", "wayland", "x11",
+] }
+# Images in notes: decoding for display, and downscaling when they're added.
+egui_extras = { version = "0.36", default-features = false, features = ["file", "image"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
+# Icon font (Phosphor), rendered as text so it scales and themes like the UI.
+egui-phosphor = "0.14"
 pulldown-cmark = { version = "0.12", default-features = false }
 rfd = "0.15"
 serde = { version = "1", features = ["derive"] }

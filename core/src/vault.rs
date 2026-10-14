@@ -11,6 +11,7 @@ pub const TRASH: &str = ".trash";
 /// Inside the trash: where each trashed item came from, one tab-separated line each.
 const TRASH_INDEX: &str = ".origins";
 
+#[derive(Clone, Debug)]
 pub struct TrashItem {
     /// File or folder name inside the trash.
     pub name: String,
