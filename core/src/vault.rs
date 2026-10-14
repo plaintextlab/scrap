@@ -189,6 +189,8 @@ impl Vault {
         let base = if base.is_empty() { "New folder".to_string() } else { base };
         let rel = self.unique(parent, &base, "");
         fs::create_dir_all(self.path(&rel))?;
+        // Git doesn't track empty folders; this keeps a new folder in sync before it has notes.
+        fs::write(self.path(&rel).join(".gitkeep"), "")?;
         self.rescan();
         Ok(rel)
     }
@@ -489,6 +491,12 @@ mod tests {
         assert!(root.join(TRASH).join("Idea one.md").exists());
         assert_eq!(v.notes.len(), 2);
         assert_eq!(v.search("untitled", 10).len(), 1);
+
+        let outer = v.create_folder("", "Projects").unwrap();
+        let inner = v.create_folder(&outer, "2026").unwrap();
+        assert_eq!(inner, "Projects/2026");
+        assert!(root.join("Projects/2026/.gitkeep").exists());
+        assert_eq!(v.tree.dirs.iter().find(|d| d.rel == outer).unwrap().dirs[0].rel, inner);
     }
 
     #[test]
