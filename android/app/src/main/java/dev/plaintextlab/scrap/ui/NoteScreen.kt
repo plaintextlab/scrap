@@ -77,6 +77,7 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
     var showLinks by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
+    var moving by remember { mutableStateOf(false) }
     val reading = vm.noteLoaded && !vm.editing
     val context = LocalContext.current
 
@@ -121,6 +122,14 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
                                 onClick = {
                                     menu = false
                                     renaming = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Move to…") },
+                                leadingIcon = { Icon(ScrapIcons.Move, null) },
+                                onClick = {
+                                    menu = false
+                                    moving = true
                                 },
                             )
                             DropdownMenuItem(
@@ -178,6 +187,12 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
         NamePrompt("Rename", titleOf(rel), "Rename", onDismiss = { renaming = false }) {
             renaming = false
             vm.rename(rel, it)
+        }
+    }
+    if (moving) {
+        MoveDialog(rel, isFolder = false, folders = vm.folders, onDismiss = { moving = false }) { dest ->
+            moving = false
+            vm.move(rel, dest)
         }
     }
     if (deleting) {

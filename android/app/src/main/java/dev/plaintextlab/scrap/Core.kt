@@ -17,6 +17,7 @@ object Core {
     @JvmStatic external fun createNote(folder: String, name: String): String
     @JvmStatic external fun createFolder(parent: String, name: String): String
     @JvmStatic external fun rename(rel: String, name: String): String
+    @JvmStatic external fun move(rel: String, folder: String): String
     @JvmStatic external fun delete(rel: String): String
     @JvmStatic external fun trash(): String
     @JvmStatic external fun restore(name: String): String

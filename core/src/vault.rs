@@ -240,6 +240,60 @@ impl Vault {
         Ok(new_rel)
     }
 
+    /// Moves a note or folder into `folder` ("" for the top level), keeping its name (or
+    /// numbering it if taken). Relative links in the moved notes, such as embedded images,
+    /// are rewritten so they still point at the same files. Returns the new path.
+    pub fn move_to(&mut self, rel: &str, folder: &str) -> io::Result<String> {
+        let src = self.path(rel);
+        if !src.exists() {
+            return Err(io::Error::new(io::ErrorKind::NotFound, format!("\"{rel}\" doesn't exist")));
+        }
+        if !folder.is_empty() && !self.path(folder).is_dir() {
+            return Err(io::Error::new(io::ErrorKind::NotFound, format!("folder \"{folder}\" doesn't exist")));
+        }
+        let is_dir = src.is_dir();
+        if is_dir && (folder == rel || folder.starts_with(&format!("{rel}/"))) {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "a folder can't be moved into itself"));
+        }
+        if parent(rel) == folder {
+            return Ok(rel.to_string());
+        }
+        let file = rel.rsplit('/').next().unwrap_or(rel);
+        let new_rel = match file.strip_suffix(".md") {
+            Some(base) if !is_dir => self.unique(folder, base, ".md"),
+            _ => self.unique(folder, file, ""),
+        };
+
+        let prefix = format!("{rel}/");
+        let moved: Vec<(String, String)> = self
+            .notes
+            .iter()
+            .filter(|n| n.rel == rel || n.rel.starts_with(&prefix))
+            .map(|n| (n.rel.clone(), n.content.clone()))
+            .collect();
+        fs::rename(&src, self.path(&new_rel))?;
+
+        // Where something at `old` (vault-relative) lives after the move.
+        let relocate = |old: &str| -> String {
+            if old == rel {
+                new_rel.clone()
+            } else if let Some(rest) = old.strip_prefix(&prefix) {
+                format!("{new_rel}/{rest}")
+            } else {
+                old.to_string()
+            }
+        };
+        for (old_note, content) in moved {
+            let new_note = relocate(&old_note);
+            let updated = rewrite_relative_links(&content, parent(&old_note), parent(&new_note), &relocate);
+            if updated != content {
+                fs::write(self.path(&new_note), updated)?;
+            }
+        }
+        self.rescan();
+        Ok(new_rel)
+    }
+
     /// Moves a note or folder into the vault's `.trash` folder, remembering where it came
     /// from so it can be restored.
     pub fn delete(&mut self, rel: &str) -> io::Result<()> {
@@ -531,6 +585,65 @@ fn is_markdown(name: &str) -> bool {
     name.len() > 3 && name.is_char_boundary(name.len() - 3) && name[name.len() - 3..].eq_ignore_ascii_case(".md")
 }
 
+/// Rewrites relative markdown link and image targets (`](path)`) in a note that moved
+/// from folder `old_dir` to `new_dir`, so they keep pointing at the same files. `relocate`
+/// maps a vault path to where it is now (for links to things that moved along with it).
+/// URLs, anchors, absolute paths and links inside fenced code are left alone.
+fn rewrite_relative_links(src: &str, old_dir: &str, new_dir: &str, relocate: &dyn Fn(&str) -> String) -> String {
+    let mut out = String::with_capacity(src.len());
+    let mut in_fence = false;
+    for line in src.split_inclusive('\n') {
+        let t = line.trim_start();
+        if t.starts_with("```") || t.starts_with("~~~") {
+            in_fence = !in_fence;
+        }
+        if in_fence || !line.contains("](") {
+            out.push_str(line);
+            continue;
+        }
+        let mut rest = line;
+        while let Some(i) = rest.find("](") {
+            out.push_str(&rest[..i + 2]);
+            rest = &rest[i + 2..];
+            let end = rest.find(|c: char| c == ')' || c.is_whitespace()).unwrap_or(rest.len());
+            let target = &rest[..end];
+            let skip = target.is_empty() || target.contains(':') || target.starts_with(['#', '/', '<']);
+            match (skip, resolve_relative(old_dir, target)) {
+                (false, Some(abs)) => out.push_str(&relative_path(new_dir, &relocate(&abs))),
+                _ => out.push_str(target),
+            }
+            rest = &rest[end..];
+        }
+        out.push_str(rest);
+    }
+    out
+}
+
+/// `dir` joined with relative `link`, with `.` and `..` resolved. None if it leaves the vault.
+fn resolve_relative(dir: &str, link: &str) -> Option<String> {
+    let mut parts: Vec<&str> = dir.split('/').filter(|s| !s.is_empty()).collect();
+    for seg in link.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            s => parts.push(s),
+        }
+    }
+    Some(parts.join("/"))
+}
+
+/// Relative link from folder `from` to vault path `to`.
+fn relative_path(from: &str, to: &str) -> String {
+    let from: Vec<&str> = from.split('/').filter(|s| !s.is_empty()).collect();
+    let to_parts: Vec<&str> = to.split('/').filter(|s| !s.is_empty()).collect();
+    let common = from.iter().zip(&to_parts).take_while(|(a, b)| a == b).count();
+    let mut out = "../".repeat(from.len() - common);
+    out.push_str(&to_parts[common..].join("/"));
+    out
+}
+
 /// Strips characters that are invalid in file names on any of the target OSes.
 fn sanitize(name: &str) -> String {
     let cleaned: String = name
@@ -621,6 +734,41 @@ mod tests {
         assert_eq!(inner, "Projects/2026");
         assert!(root.join("Projects/2026/.gitkeep").exists());
         assert_eq!(v.tree.dirs.iter().find(|d| d.rel == outer).unwrap().dirs[0].rel, inner);
+    }
+
+    #[test]
+    fn move_keeps_relative_links_working() {
+        let root = temp_dir("move");
+        fs::create_dir_all(root.join(".attachments")).unwrap();
+        fs::write(root.join(".attachments/p.jpg"), "img").unwrap();
+        fs::write(
+            root.join("Trip.md"),
+            "![](.attachments/p.jpg) [web](https://x.y/a) [[Other]] [top](#h)\n```\n![](.attachments/p.jpg)\n```\n",
+        )
+        .unwrap();
+        let mut v = Vault::open(root.clone()).unwrap();
+        let a = v.create_folder("", "A").unwrap();
+        let b = v.create_folder(&a, "B").unwrap();
+
+        // Note one level down: image link gains "../", everything else untouched.
+        let moved = v.move_to("Trip.md", &b).unwrap();
+        assert_eq!(moved, "A/B/Trip.md");
+        let text = fs::read_to_string(root.join(&moved)).unwrap();
+        assert!(text.starts_with("![](../../.attachments/p.jpg) [web](https://x.y/a) [[Other]] [top](#h)"), "{text}");
+        assert!(text.contains("```\n![](.attachments/p.jpg)\n```"), "code is left alone: {text}");
+
+        // Moving the whole folder back up keeps links valid too.
+        let moved_dir = v.move_to(&b, "").unwrap();
+        assert_eq!(moved_dir, "B");
+        let text = fs::read_to_string(root.join("B/Trip.md")).unwrap();
+        assert!(text.starts_with("![](../.attachments/p.jpg)"), "{text}");
+
+        // Name clashes get numbered; folders can't go inside themselves.
+        fs::write(root.join("Trip.md"), "").unwrap();
+        v.rescan();
+        assert_eq!(v.move_to("B/Trip.md", "").unwrap(), "Trip 1.md");
+        assert!(v.move_to(&a, &a).is_err());
+        assert_eq!(v.move_to("Trip.md", "").unwrap(), "Trip.md", "same folder is a no-op");
     }
 
     #[test]

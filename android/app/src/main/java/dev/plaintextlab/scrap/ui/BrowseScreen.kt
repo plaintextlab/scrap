@@ -70,6 +70,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
     var dialog by remember { mutableStateOf<NameDialog?>(null) }
     var actionsFor by remember { mutableStateOf<String?>(null) }
     var deleting by remember { mutableStateOf<String?>(null) }
+    var moving by remember { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }
     val sort = vm.settings.sort
 
@@ -246,6 +247,14 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
                 }),
             )
             ListItem(
+                headlineContent = { Text("Move to…") },
+                leadingContent = { Icon(ScrapIcons.Move, null) },
+                modifier = Modifier.combinedClickable(onClick = {
+                    actionsFor = null
+                    moving = rel
+                }),
+            )
+            ListItem(
                 headlineContent = { Text("Delete") },
                 leadingContent = { Icon(Icons.Default.Delete, null) },
                 modifier = Modifier.combinedClickable(onClick = {
@@ -265,6 +274,13 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
                 is NameDialog.NewFolder -> vm.createFolder(which.parent, name)
                 is NameDialog.Rename -> vm.rename(which.rel, name)
             }
+        }
+    }
+
+    moving?.let { rel ->
+        MoveDialog(rel, isFolder = rel in vm.folders, folders = vm.folders, onDismiss = { moving = null }) { dest ->
+            moving = null
+            vm.move(rel, dest)
         }
     }
 

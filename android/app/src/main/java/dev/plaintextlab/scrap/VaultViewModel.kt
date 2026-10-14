@@ -291,7 +291,19 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun rename(rel: String, name: String) = launch {
         flush()
-        val newRel = io { Core.rename(rel, name) }
+        relocated(rel, io { Core.rename(rel, name) })
+    }
+
+    fun move(rel: String, folder: String) = launch {
+        flush()
+        val newRel = io { Core.move(rel, folder) }
+        if (newRel == rel) return@launch
+        relocated(rel, newRel)
+        message = "Moved to ${if (folder.isEmpty()) "Notes" else nameOf(folder)}"
+    }
+
+    /** Points open screens at a note or folder's new path after a rename or move. */
+    private suspend fun relocated(rel: String, newRel: String) {
         unsynced = true
         fun fix(p: String) = when {
             p == rel -> newRel

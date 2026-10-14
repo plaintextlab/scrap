@@ -120,6 +120,11 @@ export!(Java_dev_plaintextlab_scrap_Core_rename(rel, name) {
     writing_vault(|v| v.rename(&rel, &name).map_err(io))
 });
 
+// Moves a note or folder into another folder ("" = top level); returns its new path.
+export!(Java_dev_plaintextlab_scrap_Core_move(rel, folder) {
+    writing_vault(|v| v.move_to(&rel, &folder).map_err(io))
+});
+
 export!(Java_dev_plaintextlab_scrap_Core_delete(rel) {
     writing_vault(|v| v.delete(&rel).map(|_| String::new()).map_err(io))
 });
