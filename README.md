@@ -47,6 +47,8 @@ Make sure git knows who you are (`git config --global user.name` / `user.email`)
 
 Prebuilt binaries for Windows, macOS (Apple Silicon and Intel) and Linux are on the [Releases page](https://github.com/plaintextlab/scrap/releases). Every push to `main` is tested and published automatically as a new release (`v<major>.<minor>.<build>`; bump major/minor in `Cargo.toml`).
 
+**Android (prototype):** each release also has an `android-arm64.apk`. Notes are stored in the app's folder (`Android/data/dev.plaintextlab.scrap/files/vault`); git sync isn't available on Android yet. Unless the repo has a signing key configured (`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` secrets), uninstall the previous version before installing a new one.
+
 The macOS build is unsigned: on first launch, right-click → Open (or run `xattr -d com.apple.quarantine scrap`).
 
 ## Building

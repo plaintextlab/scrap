@@ -1,11 +1,6 @@
 // Hide the console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod app;
-mod git;
-mod markdown;
-mod vault;
-
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
@@ -17,6 +12,6 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "Scrap",
         options,
-        Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
+        Box::new(|cc| Ok(Box::new(scrap::App::new(cc, None)))),
     )
 }

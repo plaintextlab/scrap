@@ -131,10 +131,14 @@ pub struct App {
     focus_search: bool,
     title: String,
     actions: Vec<Action>,
+    /// Phone-sized window: the file list replaces the note instead of sitting beside it.
+    narrow: bool,
 }
 
 impl App {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    /// `default_vault` is opened (and created) when no vault has been chosen yet;
+    /// on Android, where there is no folder picker, that is the only vault.
+    pub fn new(cc: &eframe::CreationContext<'_>, default_vault: Option<PathBuf>) -> Self {
         let s: Settings = cc
             .storage
             .and_then(|st| eframe::get_value(st, eframe::APP_KEY))
@@ -166,8 +170,10 @@ impl App {
             focus_search: false,
             title: String::new(),
             actions: Vec::new(),
+            narrow: false,
         };
-        if let Some(path) = app.s.vault.clone() {
+        let vault = app.s.vault.clone().or_else(|| default_vault.and_then(|p| seed_vault(p).ok()));
+        if let Some(path) = vault {
             app.open_vault(path);
         }
         app
@@ -385,7 +391,12 @@ impl App {
     fn process_actions(&mut self) {
         for action in std::mem::take(&mut self.actions) {
             match action {
-                Action::Open(rel) => self.open(&rel, true),
+                Action::Open(rel) => {
+                    self.open(&rel, true);
+                    if self.narrow {
+                        self.s.show_sidebar = false;
+                    }
+                }
                 Action::Link(url) => self.follow_link(&url),
                 Action::NewNote(folder) => self.dialog = Some(Dialog::NewNote { folder, name: String::new() }),
                 Action::NewFolder(parent) => self.dialog = Some(Dialog::NewFolder { parent, name: String::new() }),
@@ -401,6 +412,7 @@ impl App {
                 Action::Sync => self.sync(),
                 Action::Rescan => self.rescan(),
                 Action::OpenVault => {
+                    #[cfg(not(target_os = "android"))]
                     if let Some(path) = rfd::FileDialog::new().set_title("Open folder as vault").pick_folder() {
                         self.open_vault(path);
                     }
@@ -670,7 +682,7 @@ impl App {
                     if ui.button("⚙").on_hover_text("Settings").clicked() {
                         self.show_settings = !self.show_settings;
                     }
-                    if self.vault.is_some() {
+                    if self.vault.is_some() && self.git.available {
                         let label = if self.git.busy.is_some() { "⏳ Syncing…" } else { "🔄 Sync" };
                         let btn = ui.add_enabled(self.git.busy.is_none(), egui::Button::new(label));
                         if btn.on_hover_text("Commit, pull and push (Ctrl+Shift+S)").clicked() {
@@ -679,7 +691,9 @@ impl App {
                     }
                     if self.note.is_some() {
                         ui.separator();
-                        ui.selectable_value(&mut self.s.view, View::Split, "Split");
+                        if !self.narrow {
+                            ui.selectable_value(&mut self.s.view, View::Split, "Split");
+                        }
                         ui.selectable_value(&mut self.s.view, View::Preview, "Read");
                         ui.selectable_value(&mut self.s.view, View::Edit, "Edit");
                     }
@@ -749,17 +763,19 @@ impl App {
             .resizable(true)
             .default_width(250.0)
             .width_range(160.0..=500.0)
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.side, SideTab::Files, "📁 Files");
-                    ui.selectable_value(&mut self.side, SideTab::Search, "🔍 Search");
-                });
-                ui.separator();
-                match self.side {
-                    SideTab::Files => self.files_ui(ui),
-                    SideTab::Search => self.search_ui(ui),
-                }
-            });
+            .show(ctx, |ui| self.side_contents(ui));
+    }
+
+    fn side_contents(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.side, SideTab::Files, "📁 Files");
+            ui.selectable_value(&mut self.side, SideTab::Search, "🔍 Search");
+        });
+        ui.separator();
+        match self.side {
+            SideTab::Files => self.files_ui(ui),
+            SideTab::Search => self.search_ui(ui),
+        }
     }
 
     fn files_ui(&mut self, ui: &mut Ui) {
@@ -1146,6 +1162,7 @@ impl App {
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
                             if ui.button("Choose folder…").clicked() {
+                                #[cfg(not(target_os = "android"))]
                                 if let Some(p) = rfd::FileDialog::new().set_title("Clone into…").pick_folder() {
                                     *parent = Some(p);
                                 }
@@ -1207,7 +1224,12 @@ impl App {
                 ui.separator();
                 ui.label(RichText::new("Git sync").strong());
                 if !self.git.available {
-                    ui.colored_label(ui.visuals().warn_fg_color, "git wasn't found on PATH. Install git to enable sync.");
+                    let msg = if cfg!(target_os = "android") {
+                        "Sync isn't available on Android yet."
+                    } else {
+                        "git wasn't found on PATH. Install git to enable sync."
+                    };
+                    ui.colored_label(ui.visuals().warn_fg_color, msg);
                     return;
                 }
                 if self.vault.is_none() {
@@ -1251,15 +1273,28 @@ impl eframe::App for App {
         self.shortcuts(ctx);
         self.timers(ctx);
 
+        self.narrow = ctx.screen_rect().width() < 700.0;
+        if self.narrow && self.s.view == View::Split {
+            self.s.view = View::Edit;
+        }
         self.top_bar(ctx);
         self.status_bar(ctx);
-        if self.vault.is_some() && self.s.show_sidebar {
-            self.sidebar(ctx);
+        let files_only = self.narrow && self.vault.is_some() && self.s.show_sidebar;
+        if !files_only {
+            if self.vault.is_some() && self.s.show_sidebar {
+                self.sidebar(ctx);
+            }
+            if self.note.is_some() && self.s.show_links && !self.narrow {
+                self.links_panel(ctx);
+            }
         }
-        if self.note.is_some() && self.s.show_links {
-            self.links_panel(ctx);
-        }
-        egui::CentralPanel::default().show(ctx, |ui| self.central(ui));
+        egui::CentralPanel::default().show(ctx, |ui| {
+            if files_only {
+                self.side_contents(ui);
+            } else {
+                self.central(ui);
+            }
+        });
 
         self.switcher_ui(ctx);
         self.dialog_ui(ctx);
@@ -1336,6 +1371,23 @@ fn centered<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
         .inner
     })
     .inner
+}
+
+/// Creates the vault folder with a welcome note the first time it is used.
+fn seed_vault(path: PathBuf) -> std::io::Result<PathBuf> {
+    std::fs::create_dir_all(&path)?;
+    if std::fs::read_dir(&path)?.next().is_none() {
+        std::fs::write(
+            path.join("Welcome.md"),
+            "# Welcome to Scrap
+
+Notes are plain **markdown** files. Link notes with [[Ideas]],              then tap *Read* to follow links.
+
+- [ ] Write something
+",
+        )?;
+    }
+    Ok(path)
 }
 
 fn normalize(raw: String) -> (String, bool) {
