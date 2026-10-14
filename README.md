@@ -47,7 +47,7 @@ Make sure git knows who you are (`git config --global user.name` / `user.email`)
 
 Prebuilt binaries for Windows, macOS (Apple Silicon and Intel) and Linux are on the [Releases page](https://github.com/plaintextlab/scrap/releases). Every push to `main` is tested and published automatically as a new release (`v<major>.<minor>.<build>`; bump major/minor in `Cargo.toml`).
 
-**Android (prototype):** each release also has an `android-arm64.apk`. Notes are stored in the app's folder (`Android/data/dev.plaintextlab.scrap/files/vault`); git sync isn't available on Android yet. Unless the repo has a signing key configured (`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` secrets), uninstall the previous version before installing a new one.
+**Android:** each release also has an `android-arm64.apk`: a native Material 3 app (Jetpack Compose, dynamic colour) on the same Rust core. Notes live in `Android/data/dev.plaintextlab.scrap/files/vault`. Git sync isn't available on Android yet. Unless the repo has a signing key configured (`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` secrets, key alias `scrap`), uninstall the previous version before installing a new one.
 
 The macOS build is unsigned: on first launch, right-click → Open (or run `xattr -d com.apple.quarantine scrap`).
 
@@ -67,4 +67,23 @@ On Linux you also need the usual windowing dev packages, e.g. on Debian/Ubuntu:
 sudo apt install libxkbcommon-dev libgl1-mesa-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
 ```
 
-Run the tests with `cargo test`. They include an end-to-end sync between two clones of a local bare repo.
+Run the tests with `cargo test --workspace`. They include an end-to-end sync between two clones of a local bare repo.
+
+### Project layout
+
+| Path | What |
+| --- | --- |
+| `core/` | `scrap-core`: vault, links, rename, search (no UI, shared by everything) |
+| `src/` | Desktop app (egui) and git sync |
+| `android/rust/` | JNI bridge exposing `scrap-core` to Kotlin |
+| `android/app/` | Android app (Kotlin, Jetpack Compose, Material 3) |
+
+### Building the Android app
+
+Needs the Android SDK + NDK, JDK 17, Gradle 8.11+ and [cargo-ndk](https://github.com/bbqsrc/cargo-ndk):
+
+```sh
+rustup target add aarch64-linux-android
+cargo ndk -t arm64-v8a -o android/app/src/main/jniLibs build --release -p scrap-android
+cd android && gradle assembleRelease
+```

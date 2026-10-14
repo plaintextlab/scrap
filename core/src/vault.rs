@@ -239,6 +239,23 @@ impl Vault {
     }
 }
 
+/// Creates the vault folder with a welcome note the first time it is used.
+pub fn seed(root: &Path) -> io::Result<()> {
+    fs::create_dir_all(root)?;
+    if fs::read_dir(root)?.next().is_none() {
+        fs::write(
+            root.join("Welcome.md"),
+            "# Welcome to Scrap
+
+Notes are plain **markdown** files. Link notes with [[Ideas]],              then open the link to create that note.
+
+- [ ] Write something
+",
+        )?;
+    }
+    Ok(())
+}
+
 fn scan_dir(abs: &Path, rel: &str, dir: &mut Dir, notes: &mut Vec<Note>) {
     let Ok(read) = fs::read_dir(abs) else { return };
     let mut entries: Vec<_> = read.flatten().collect();
@@ -385,10 +402,10 @@ fn snippet(line: &str, max: usize) -> String {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use super::*;
 
-    pub fn temp_dir(name: &str) -> PathBuf {
+    fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("scrap-test-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();

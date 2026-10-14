@@ -12,6 +12,6 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "Scrap",
         options,
-        Box::new(|cc| Ok(Box::new(scrap::App::new(cc, None)))),
+        Box::new(|cc| Ok(Box::new(scrap::App::new(cc)))),
     )
 }

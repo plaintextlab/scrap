@@ -1,0 +1,6 @@
+[package]
+name = "scrap-core"
+version = "0.1.0"
+edition = "2021"
+description = "Platform-independent vault, link and search logic for Scrap"
+license = "MIT"

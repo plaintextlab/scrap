@@ -5,6 +5,9 @@ use eframe::egui::{
     self, text::LayoutJob, Color32, FontFamily, FontId, RichText, Stroke, TextFormat, Ui, Visuals,
 };
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag};
+use scrap_core::links::{wikilinks_to_md, LinkStyle};
+
+pub use scrap_core::links::link_at;
 
 const HEADING_SCALE: [f32; 6] = [1.7, 1.45, 1.25, 1.1, 1.0, 0.95];
 
@@ -205,81 +208,13 @@ fn token(s: &str, i: usize, f: &TextFormat, c: &Colors) -> Option<(usize, Parts)
     None
 }
 
-/// The link under a cursor position (in chars), as a URL; wiki links become `wiki:Target`.
-pub fn link_at(text: &str, char_idx: usize) -> Option<String> {
-    let pos = text.char_indices().nth(char_idx).map_or(text.len(), |(b, _)| b);
-    let start = text[..pos].rfind('\n').map_or(0, |i| i + 1);
-    let end = text[pos..].find('\n').map_or(text.len(), |i| pos + i);
-    let line = &text[start..end];
-    let p = pos - start;
-
-    let mut i = 0;
-    while let Some(s) = line[i..].find("[[") {
-        let s = i + s;
-        let Some(e) = line[s + 2..].find("]]") else { break };
-        let e = s + 2 + e;
-        if p >= s && p <= e + 2 {
-            let target = line[s + 2..e].split('|').next().unwrap_or("").trim();
-            return Some(format!("wiki:{target}"));
-        }
-        i = e + 2;
-    }
-
-    let mut i = 0;
-    while let Some(m) = line[i..].find("](") {
-        let m = i + m;
-        let Some(e) = line[m..].find(')') else { break };
-        let e = m + e;
-        let open = line[..m].rfind('[').unwrap_or(m);
-        if p >= open && p <= e {
-            return Some(line[m + 2..e].trim_matches(['<', '>']).to_string());
-        }
-        i = e + 1;
-    }
-    None
-}
-
 // ---------------------------------------------------------------------------
 // Preview
 // ---------------------------------------------------------------------------
 
-/// Turns `[[Target|Alias]]` into regular markdown links with a `wiki:` scheme.
-fn wikilinks_to_md(src: &str) -> String {
-    let mut out = String::with_capacity(src.len() + 64);
-    let mut in_fence = false;
-    for line in src.split_inclusive('\n') {
-        let t = line.trim_start();
-        if t.starts_with("```") || t.starts_with("~~~") {
-            in_fence = !in_fence;
-        }
-        if in_fence || !line.contains("[[") {
-            out.push_str(line);
-            continue;
-        }
-        let mut rest = line;
-        while let Some(s) = rest.find("[[") {
-            let Some(e) = rest[s + 2..].find("]]") else { break };
-            let inner = &rest[s + 2..s + 2 + e];
-            let (target, label) = match inner.split_once('|') {
-                Some((t, l)) => (t.trim(), l.trim()),
-                None => (inner.trim(), inner.trim()),
-            };
-            out.push_str(&rest[..s]);
-            out.push_str(&format!(
-                "[{}](<wiki:{}>)",
-                label.replace('[', "\\[").replace(']', "\\]"),
-                target.replace(['<', '>'], "")
-            ));
-            rest = &rest[s + 2 + e + 2..];
-        }
-        out.push_str(rest);
-    }
-    out
-}
-
 /// Renders markdown; returns the URL of a clicked link, if any.
 pub fn preview(ui: &mut Ui, src: &str, size: f32) -> Option<String> {
-    let md = wikilinks_to_md(src);
+    let md = wikilinks_to_md(src, LinkStyle::AngleBrackets);
     let opts = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS
@@ -668,21 +603,5 @@ mod tests {
         let src = "# Title **x**\n- [ ] task with `code` and [[Link|alias]]\n> quote *em*\n```rust\nlet a = 1;\n```\n1. [md](http://x) #tag ~~gone~~ é**ü**\n**unclosed and [broken\n";
         let job = highlight(src, &Visuals::dark(), 14.0);
         assert_eq!(job.text, src);
-    }
-
-    #[test]
-    fn wikilinks_become_markdown_links() {
-        assert_eq!(wikilinks_to_md("a [[My Note|alias]] b"), "a [alias](<wiki:My Note>) b");
-        assert_eq!(wikilinks_to_md("```\n[[x]]\n```\n"), "```\n[[x]]\n```\n");
-    }
-
-    #[test]
-    fn link_under_cursor() {
-        let text = "first line\nsee [[Target#h|T]] or [site](https://example.com)";
-        let wiki = text.find("Target").unwrap();
-        assert_eq!(link_at(text, wiki).as_deref(), Some("wiki:Target#h"));
-        let md = text.find("site").unwrap();
-        assert_eq!(link_at(text, md).as_deref(), Some("https://example.com"));
-        assert_eq!(link_at(text, 2), None);
     }
 }

@@ -323,8 +323,14 @@ pub fn repo_name(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vault::tests::temp_dir;
     use std::fs;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("scrap-test-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
 
     fn configure(dir: &Path) {
         run(dir, &["config", "user.name", "Test"]).unwrap();

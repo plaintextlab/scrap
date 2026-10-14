@@ -136,9 +136,7 @@ pub struct App {
 }
 
 impl App {
-    /// `default_vault` is opened (and created) when no vault has been chosen yet;
-    /// on Android, where there is no folder picker, that is the only vault.
-    pub fn new(cc: &eframe::CreationContext<'_>, default_vault: Option<PathBuf>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let s: Settings = cc
             .storage
             .and_then(|st| eframe::get_value(st, eframe::APP_KEY))
@@ -172,8 +170,7 @@ impl App {
             actions: Vec::new(),
             narrow: false,
         };
-        let vault = app.s.vault.clone().or_else(|| default_vault.and_then(|p| seed_vault(p).ok()));
-        if let Some(path) = vault {
+        if let Some(path) = app.s.vault.clone() {
             app.open_vault(path);
         }
         app
@@ -412,7 +409,6 @@ impl App {
                 Action::Sync => self.sync(),
                 Action::Rescan => self.rescan(),
                 Action::OpenVault => {
-                    #[cfg(not(target_os = "android"))]
                     if let Some(path) = rfd::FileDialog::new().set_title("Open folder as vault").pick_folder() {
                         self.open_vault(path);
                     }
@@ -1162,7 +1158,6 @@ impl App {
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
                             if ui.button("Choose folder…").clicked() {
-                                #[cfg(not(target_os = "android"))]
                                 if let Some(p) = rfd::FileDialog::new().set_title("Clone into…").pick_folder() {
                                     *parent = Some(p);
                                 }
@@ -1224,12 +1219,7 @@ impl App {
                 ui.separator();
                 ui.label(RichText::new("Git sync").strong());
                 if !self.git.available {
-                    let msg = if cfg!(target_os = "android") {
-                        "Sync isn't available on Android yet."
-                    } else {
-                        "git wasn't found on PATH. Install git to enable sync."
-                    };
-                    ui.colored_label(ui.visuals().warn_fg_color, msg);
+                    ui.colored_label(ui.visuals().warn_fg_color, "git wasn't found on PATH. Install git to enable sync.");
                     return;
                 }
                 if self.vault.is_none() {
@@ -1371,23 +1361,6 @@ fn centered<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
         .inner
     })
     .inner
-}
-
-/// Creates the vault folder with a welcome note the first time it is used.
-fn seed_vault(path: PathBuf) -> std::io::Result<PathBuf> {
-    std::fs::create_dir_all(&path)?;
-    if std::fs::read_dir(&path)?.next().is_none() {
-        std::fs::write(
-            path.join("Welcome.md"),
-            "# Welcome to Scrap
-
-Notes are plain **markdown** files. Link notes with [[Ideas]],              then tap *Read* to follow links.
-
-- [ ] Write something
-",
-        )?;
-    }
-    Ok(path)
 }
 
 fn normalize(raw: String) -> (String, bool) {
