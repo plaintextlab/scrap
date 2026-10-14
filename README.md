@@ -4,6 +4,8 @@ A minimal, markdown-based notes app written in Rust. Think Obsidian without the 
 
 Runs on Windows, macOS and Linux.
 
+![Alt text](/screenshots/cover.png?raw=true "cover")
+
 ## Features
 
 The desktop and Android apps share the same core and the same features:
@@ -19,6 +21,18 @@ The desktop and Android apps share the same core and the same features:
 - **Light, dark or system theme**, adjustable text size, notes open in Edit, Read or the last used view.
 - **Autosave**, back/forward history, word and character counts.
 - **Git sync**: commit, pull and push in one click, automatically on a timer, when the vault opens and when the app closes. If the same note changed on two devices, **both versions are kept** (`Note (conflict).md`) instead of leaving conflict markers.
+
+## Screenshots
+
+![Alt text](/screenshots/1.png?raw=true "Destkop_1")
+![Alt text](/screenshots/2.png?raw=true "Destkop_2")
+![Alt text](/screenshots/3.png?raw=true "Destkop_3")
+![Alt text](/screenshots/4.jpg?raw=true "Android_1")
+![Alt text](/screenshots/5.jpg?raw=true "Android_2")
+![Alt text](/screenshots/6.jpg?raw=true "Android_3")
+![Alt text](/screenshots/7.jpg?raw=true "Android_4")
+![Alt text](/screenshots/8.jpg?raw=true "Android_5")
+
 
 ## Git sync
 
