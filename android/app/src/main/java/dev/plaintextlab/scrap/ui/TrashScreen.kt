@@ -76,7 +76,7 @@ fun TrashScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                                 DropdownMenuItem(
                                     text = { Text("Empty trash") },
-                                    leadingIcon = { Icon(Icons.Default.Delete, null) },
+                                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = LocalGruvbox.current.red) },
                                     onClick = {
                                         menu = false
                                         emptying = true
@@ -163,7 +163,11 @@ private fun TrashRow(item: TrashItem, onRestore: () -> Unit, onPurge: () -> Unit
                 overflow = TextOverflow.Ellipsis,
             )
         },
-        leadingContent = { Icon(if (item.isDir) ScrapIcons.Folder else ScrapIcons.Note, contentDescription = null) },
+        leadingContent = { Icon(
+            if (item.isDir) ScrapIcons.Folder else ScrapIcons.Note,
+            contentDescription = null,
+            tint = if (item.isDir) LocalGruvbox.current.yellow else LocalGruvbox.current.blue,
+        ) },
         trailingContent = {
             Box {
                 IconButton(onClick = { menu = true }) {
@@ -180,7 +184,7 @@ private fun TrashRow(item: TrashItem, onRestore: () -> Unit, onPurge: () -> Unit
                     )
                     DropdownMenuItem(
                         text = { Text("Delete forever") },
-                        leadingIcon = { Icon(Icons.Default.Delete, null) },
+                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = LocalGruvbox.current.red) },
                         onClick = {
                             menu = false
                             onPurge()
@@ -200,7 +204,7 @@ private fun displayName(item: TrashItem): String =
 private fun ConfirmPermanent(title: String, text: String, action: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+        icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = LocalGruvbox.current.red) },
         title = { Text(title) },
         text = { Text(text) },
         confirmButton = {

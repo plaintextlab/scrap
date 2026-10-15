@@ -31,7 +31,6 @@ data class SyncSettings(
 
 data class AppSettings(
     val theme: ThemeMode = ThemeMode.System,
-    val dynamicColor: Boolean = true,
     /** Multiplier for note text (editor and reader). */
     val textScale: Float = 1f,
     val openInEdit: Boolean = false,
@@ -48,7 +47,6 @@ class SettingsStore(context: Context) {
     fun load(): AppSettings = with(prefs) {
         AppSettings(
             theme = enumOr(getString("theme", null), ThemeMode.System),
-            dynamicColor = getBoolean("dynamicColor", true),
             textScale = getFloat("textScale", 1f),
             openInEdit = getBoolean("openInEdit", false),
             sort = enumOr(getString("sort", null), SortOrder.Name),
@@ -68,7 +66,6 @@ class SettingsStore(context: Context) {
     fun save(s: AppSettings) {
         prefs.edit()
             .putString("theme", s.theme.name)
-            .putBoolean("dynamicColor", s.dynamicColor)
             .putFloat("textScale", s.textScale)
             .putBoolean("openInEdit", s.openInEdit)
             .putString("sort", s.sort.name)

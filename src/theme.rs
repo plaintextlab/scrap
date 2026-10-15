@@ -14,7 +14,8 @@ pub fn semibold() -> FontFamily {
     FontFamily::Name("semibold".into())
 }
 
-/// Colours for one theme. Everything in the UI is drawn from these.
+/// Colours for one theme. Everything in the UI is drawn from these: Gruvbox
+/// (https://github.com/morhetz/gruvbox) dark and light.
 #[derive(Clone, Copy)]
 pub struct Palette {
     /// Note area.
@@ -36,40 +37,69 @@ pub struct Palette {
     pub code_bg: Color32,
     pub danger: Color32,
     pub success: Color32,
+    // Gruvbox accents, for colour-coded icons and markdown.
+    pub red: Color32,
+    pub green: Color32,
+    pub yellow: Color32,
+    pub blue: Color32,
+    pub purple: Color32,
+    pub aqua: Color32,
+    pub orange: Color32,
+    pub gray: Color32,
 }
 
+/// Gruvbox light: bg0 fbf1c7, bg0_h f9f5d7, bg0_s f2e5bc, bg1 ebdbb2, bg2 d5c4a1,
+/// fg1 3c3836, fg4 7c6f64, bg4 a89984; faded accents.
 pub const LIGHT: Palette = Palette {
-    bg: Color32::from_rgb(0xFF, 0xFF, 0xFF),
-    panel: Color32::from_rgb(0xF6, 0xF6, 0xF8),
-    surface: Color32::from_rgb(0xFF, 0xFF, 0xFF),
-    border: Color32::from_rgb(0xE4, 0xE4, 0xE9),
-    text: Color32::from_rgb(0x1E, 0x1E, 0x24),
-    muted: Color32::from_rgb(0x6A, 0x6A, 0x76),
-    faint: Color32::from_rgb(0xA3, 0xA3, 0xAE),
-    accent: Color32::from_rgb(0x5B, 0x4B, 0xDB),
-    on_accent: Color32::WHITE,
-    accent_soft: Color32::from_rgb(0xEC, 0xE9, 0xFC),
-    hover: Color32::from_rgb(0xEC, 0xEC, 0xF0),
-    code_bg: Color32::from_rgb(0xF3, 0xF3, 0xF6),
-    danger: Color32::from_rgb(0xD1, 0x3C, 0x3C),
-    success: Color32::from_rgb(0x1E, 0x9E, 0x63),
+    bg: Color32::from_rgb(0xFB, 0xF1, 0xC7),
+    panel: Color32::from_rgb(0xF2, 0xE5, 0xBC),
+    surface: Color32::from_rgb(0xF9, 0xF5, 0xD7),
+    border: Color32::from_rgb(0xD5, 0xC4, 0xA1),
+    text: Color32::from_rgb(0x3C, 0x38, 0x36),
+    muted: Color32::from_rgb(0x7C, 0x6F, 0x64),
+    faint: Color32::from_rgb(0xA8, 0x99, 0x84),
+    accent: Color32::from_rgb(0xB5, 0x76, 0x14),
+    on_accent: Color32::from_rgb(0xFB, 0xF1, 0xC7),
+    accent_soft: Color32::from_rgb(0xD5, 0xC4, 0xA1),
+    hover: Color32::from_rgb(0xEB, 0xDB, 0xB2),
+    code_bg: Color32::from_rgb(0xF2, 0xE5, 0xBC),
+    danger: Color32::from_rgb(0x9D, 0x00, 0x06),
+    success: Color32::from_rgb(0x79, 0x74, 0x0E),
+    red: Color32::from_rgb(0x9D, 0x00, 0x06),
+    green: Color32::from_rgb(0x79, 0x74, 0x0E),
+    yellow: Color32::from_rgb(0xB5, 0x76, 0x14),
+    blue: Color32::from_rgb(0x07, 0x66, 0x78),
+    purple: Color32::from_rgb(0x8F, 0x3F, 0x71),
+    aqua: Color32::from_rgb(0x42, 0x7B, 0x58),
+    orange: Color32::from_rgb(0xAF, 0x3A, 0x03),
+    gray: Color32::from_rgb(0x7C, 0x6F, 0x64),
 };
 
+/// Gruvbox dark: bg0 282828, bg0_h 1d2021, bg0_s 32302f, bg1 3c3836, bg2 504945,
+/// fg1 ebdbb2, fg4 a89984, bg4 7c6f64; bright accents.
 pub const DARK: Palette = Palette {
-    bg: Color32::from_rgb(0x18, 0x18, 0x1C),
-    panel: Color32::from_rgb(0x1F, 0x1F, 0x24),
-    surface: Color32::from_rgb(0x26, 0x26, 0x2C),
-    border: Color32::from_rgb(0x32, 0x32, 0x3A),
-    text: Color32::from_rgb(0xE6, 0xE6, 0xEB),
-    muted: Color32::from_rgb(0x9C, 0x9C, 0xA8),
-    faint: Color32::from_rgb(0x66, 0x66, 0x72),
-    accent: Color32::from_rgb(0xA3, 0x99, 0xFF),
-    on_accent: Color32::from_rgb(0x16, 0x12, 0x33),
-    accent_soft: Color32::from_rgb(0x33, 0x2E, 0x52),
-    hover: Color32::from_rgb(0x2C, 0x2C, 0x33),
-    code_bg: Color32::from_rgb(0x24, 0x24, 0x2A),
-    danger: Color32::from_rgb(0xF2, 0x6D, 0x6D),
-    success: Color32::from_rgb(0x4C, 0xC9, 0x8E),
+    bg: Color32::from_rgb(0x28, 0x28, 0x28),
+    panel: Color32::from_rgb(0x1D, 0x20, 0x21),
+    surface: Color32::from_rgb(0x32, 0x30, 0x2F),
+    border: Color32::from_rgb(0x3C, 0x38, 0x36),
+    text: Color32::from_rgb(0xEB, 0xDB, 0xB2),
+    muted: Color32::from_rgb(0xA8, 0x99, 0x84),
+    faint: Color32::from_rgb(0x7C, 0x6F, 0x64),
+    accent: Color32::from_rgb(0xFA, 0xBD, 0x2F),
+    on_accent: Color32::from_rgb(0x28, 0x28, 0x28),
+    accent_soft: Color32::from_rgb(0x50, 0x49, 0x45),
+    hover: Color32::from_rgb(0x3C, 0x38, 0x36),
+    code_bg: Color32::from_rgb(0x32, 0x30, 0x2F),
+    danger: Color32::from_rgb(0xFB, 0x49, 0x34),
+    success: Color32::from_rgb(0xB8, 0xBB, 0x26),
+    red: Color32::from_rgb(0xFB, 0x49, 0x34),
+    green: Color32::from_rgb(0xB8, 0xBB, 0x26),
+    yellow: Color32::from_rgb(0xFA, 0xBD, 0x2F),
+    blue: Color32::from_rgb(0x83, 0xA5, 0x98),
+    purple: Color32::from_rgb(0xD3, 0x86, 0x9B),
+    aqua: Color32::from_rgb(0x8E, 0xC0, 0x7C),
+    orange: Color32::from_rgb(0xFE, 0x80, 0x19),
+    gray: Color32::from_rgb(0x92, 0x83, 0x74),
 };
 
 pub fn palette(ctx: &egui::Context) -> Palette {
@@ -141,7 +171,7 @@ fn visuals(dark: bool, p: &Palette) -> Visuals {
     let r = CornerRadius::same(RADIUS);
     v.override_text_color = Some(p.text);
     v.weak_text_color = Some(p.muted);
-    v.hyperlink_color = p.accent;
+    v.hyperlink_color = p.blue;
     v.faint_bg_color = p.panel;
     v.extreme_bg_color = p.bg;
     v.text_edit_bg_color = Some(p.bg);
@@ -156,7 +186,7 @@ fn visuals(dark: bool, p: &Palette) -> Visuals {
     v.popup_shadow = Shadow { offset: [0, 4], blur: 16, spread: 0, color: Color32::from_black_alpha(shadow_alpha) };
     v.selection.bg_fill = p.accent.gamma_multiply(if dark { 0.45 } else { 0.25 });
     v.selection.stroke = Stroke::new(1.0, p.accent);
-    v.warn_fg_color = Color32::from_rgb(0xD9, 0x8E, 0x1F);
+    v.warn_fg_color = p.yellow;
     v.error_fg_color = p.danger;
     v.striped = false;
     v.slider_trailing_fill = true;

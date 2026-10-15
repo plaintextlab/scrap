@@ -1,7 +1,7 @@
 //! The left sidebar: vault header, search, the folder tree (with drag and drop to
 //! move things), and links to the trash, settings and sync.
 
-use crate::app::{vault_name, Action, App, Page, Settings, Sort};
+use crate::app::{vault_name, Action, App, Page, Settings, Sort, ThemeChoice};
 use crate::theme::{self, icon};
 use crate::vault::{self, Dir, Vault};
 use crate::widgets::{self, Row};
@@ -22,6 +22,7 @@ impl App {
         let name = vault_name(v);
         let folder = self.current_folder();
         let mut actions = Vec::new();
+        let mut toggle_theme = false;
 
         // Header: vault name with its menu, then quick actions.
         ui.horizontal(|ui| {
@@ -58,6 +59,14 @@ impl App {
                 if self.narrow && self.note.is_some() && widgets::icon_button(ui, icon::X, "Back to the note").clicked() {
                     self.s.show_sidebar = false;
                 }
+                let (glyph, tip) = if ui.ctx().theme() == egui::Theme::Dark {
+                    (icon::SUN, "Light theme")
+                } else {
+                    (icon::MOON, "Dark theme")
+                };
+                if widgets::icon_button(ui, glyph, tip).clicked() {
+                    toggle_theme = true;
+                }
                 if widgets::icon_button(ui, icon::FOLDER_SIMPLE_PLUS, "New folder (Ctrl+Shift+N)").clicked() {
                     actions.push(Action::NewFolder(folder.clone()));
                 }
@@ -66,6 +75,11 @@ impl App {
                 }
             });
         });
+        if toggle_theme {
+            let dark = ui.ctx().theme() == egui::Theme::Dark;
+            self.s.theme = if dark { ThemeChoice::Light } else { ThemeChoice::Dark };
+            self.apply_theme();
+        }
         ui.add_space(8.0);
 
         // Search field look-alike that opens the search palette.
@@ -119,12 +133,14 @@ impl App {
             ui.spacing_mut().item_spacing.y = 1.0;
             self.sync_row(ui, &mut actions);
             let mut settings = Row::new(icon::GEAR_SIX, "Settings");
+            settings.tint = Some(theme::palette(ui.ctx()).purple);
             settings.selected = self.page == Page::Settings;
             if widgets::row(ui, settings).clicked() {
                 actions.push(Action::Page(Page::Settings));
             }
             let count = self.trash.len().to_string();
             let mut trash = Row::new(icon::TRASH, "Trash");
+            trash.tint = Some(theme::palette(ui.ctx()).red);
             trash.selected = self.page == Page::Trash;
             trash.detail = (!self.trash.is_empty()).then_some(count.as_str());
             let resp = widgets::row(ui, trash);
@@ -185,6 +201,14 @@ impl App {
             icon::CLOUD_CHECK
         };
         let mut row = Row::new(glyph, &label);
+        let p = theme::palette(ui.ctx());
+        row.tint = Some(if busy {
+            p.aqua
+        } else if st.changes > 0 || st.ahead > 0 {
+            p.orange
+        } else {
+            p.green
+        });
         row.detail = (!detail.is_empty()).then_some(detail.as_str());
         let resp = widgets::row(ui, row);
         if busy {
@@ -203,10 +227,12 @@ impl App {
 
 fn tree(ui: &mut Ui, v: &Vault, dir: &Dir, depth: usize, s: &Settings, current: Option<&str>, actions: &mut Vec<Action>) {
     let indent = depth as f32 * 14.0;
+    let p = theme::palette(ui.ctx());
     for d in &dir.dirs {
         let open = s.expanded.contains(&d.rel);
         let mut row = Row::new(if open { icon::FOLDER_OPEN } else { icon::FOLDER_SIMPLE }, &d.name);
         row.indent = indent;
+        row.tint = Some(p.yellow);
         row.caret = Some(open);
         let resp = widgets::row(ui, row);
         resp.dnd_set_drag_payload(Dragged(d.rel.clone()));
@@ -226,6 +252,7 @@ fn tree(ui: &mut Ui, v: &Vault, dir: &Dir, depth: usize, s: &Settings, current: 
     for i in notes {
         let note = &v.notes[i];
         let mut row = Row::new(icon::FILE_TEXT, &note.name);
+        row.tint = Some(p.blue);
         row.indent = indent;
         row.selected = current == Some(note.rel.as_str());
         let resp = widgets::row(ui, row);

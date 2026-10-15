@@ -118,6 +118,7 @@ impl App {
                                 let name = if folder.is_empty() { "Notes (top level)".to_string() } else { vault::stem(&folder) };
                                 let glyph = if folder.is_empty() { icon::TREE_STRUCTURE } else { icon::FOLDER_SIMPLE };
                                 let mut row = Row::new(glyph, &name);
+                                row.tint = Some(if folder.is_empty() { p.blue } else { p.yellow });
                                 row.indent = depth.saturating_sub(1) as f32 * 16.0;
                                 row.detail = (folder == current).then_some("current");
                                 let resp = ui.add_enabled_ui(!disabled, |ui| widgets::row(ui, row)).inner;

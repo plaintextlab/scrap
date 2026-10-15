@@ -54,7 +54,7 @@ pub fn highlight(text: &str, visuals: &Visuals, size: f32) -> LayoutJob {
             continue;
         }
         if in_fence {
-            job.append(line, 0.0, mono(size, c.text, c.code_bg));
+            job.append(line, 0.0, mono(size, c.green, c.code_bg));
             continue;
         }
 
@@ -63,7 +63,7 @@ pub fn highlight(text: &str, visuals: &Visuals, size: f32) -> LayoutJob {
             let scaled = size * HEADING_SCALE[hashes - 1];
             let marker = indent + hashes;
             job.append(&line[..marker], 0.0, prop(scaled, c.faint));
-            inline(&mut job, &line[marker..], &bold(scaled, c.text), &c);
+            inline(&mut job, &line[marker..], &bold(scaled, c.yellow), &c);
             continue;
         }
 
@@ -75,11 +75,11 @@ pub fn highlight(text: &str, visuals: &Visuals, size: f32) -> LayoutJob {
         let marker = indent + list_prefix(trimmed);
         let mut body = base.clone();
         if trimmed.starts_with('>') {
-            body.color = c.muted;
+            body.color = c.gray;
             body.italics = true;
         }
         if marker > indent {
-            job.append(&line[..marker], 0.0, prop(size, c.accent));
+            job.append(&line[..marker], 0.0, prop(size, c.orange));
         } else if marker > 0 {
             job.append(&line[..marker], 0.0, base.clone());
         }
@@ -139,7 +139,7 @@ type Parts = Vec<(usize, usize, TextFormat)>;
 fn token(s: &str, i: usize, f: &TextFormat, c: &Palette) -> Option<(usize, Parts)> {
     let rest = &s[i..];
     let weak = TextFormat { color: c.faint, ..f.clone() };
-    let link = TextFormat { color: c.accent, ..f.clone() };
+    let link = TextFormat { color: c.blue, ..f.clone() };
 
     if let Some(after) = rest.strip_prefix('`') {
         let close = after.find('`')? + 1;
@@ -203,7 +203,7 @@ fn token(s: &str, i: usize, f: &TextFormat, c: &Palette) -> Option<(usize, Parts
             .find(|ch: char| !(ch.is_alphanumeric() || matches!(ch, '_' | '-' | '/')))
             .unwrap_or(rest.len() - 1);
         if len > 0 {
-            return Some((i + 1 + len, vec![(i, i + 1 + len, TextFormat { color: c.accent, ..f.clone() })]));
+            return Some((i + 1 + len, vec![(i, i + 1 + len, TextFormat { color: c.aqua, ..f.clone() })]));
         }
     }
     None
@@ -566,7 +566,7 @@ impl Renderer {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 ui.spacing_mut().item_spacing.y = size * 0.3;
                 if let Some(b) = bullet.as_deref().filter(|b| !b.is_empty()) {
-                    ui.label(RichText::new(b).size(size).color(c.accent));
+                    ui.label(RichText::new(b).size(size).color(c.orange));
                 }
                 for span in &spans {
                     if let Some(url) = span_ui(ui, span, size, heading, quote > 0, &c) {
@@ -579,7 +579,7 @@ impl Renderer {
         let rect = resp.response.rect;
         for q in 0..quote {
             let x = rect.left() + list_indent + q as f32 * 16.0 + 3.0;
-            ui.painter().vline(x, rect.y_range(), Stroke::new(3.0, c.accent.gamma_multiply(0.45)));
+            ui.painter().vline(x, rect.y_range(), Stroke::new(3.0, c.gray.gamma_multiply(0.6)));
         }
         if clicked.is_some() {
             self.clicked = clicked;
@@ -642,11 +642,14 @@ fn span_ui(ui: &mut Ui, span: &Span, size: f32, heading: bool, quote: bool, c: &
     if heading || st.strong {
         rt = rt.family(theme::semibold());
     }
+    if heading {
+        rt = rt.color(c.yellow);
+    }
     if st.emph || quote {
         rt = rt.italics();
     }
     if quote {
-        rt = rt.color(c.muted);
+        rt = rt.color(c.gray);
     }
     if st.strike {
         rt = rt.strikethrough();
@@ -655,12 +658,12 @@ fn span_ui(ui: &mut Ui, span: &Span, size: f32, heading: bool, quote: bool, c: &
         rt = rt.color(color);
     }
     if st.code {
-        rt = rt.family(FontFamily::Monospace).size(size * 0.86).background_color(c.code_bg);
+        rt = rt.family(FontFamily::Monospace).size(size * 0.86).color(c.green).background_color(c.code_bg);
     }
     match &st.link {
         Some(url) => {
             let hover = url.strip_prefix("wiki:").unwrap_or(url);
-            ui.link(rt.color(c.accent)).on_hover_text(hover).clicked().then(|| url.clone())
+            ui.link(rt.color(c.blue)).on_hover_text(hover).clicked().then(|| url.clone())
         }
         None => {
             ui.label(rt);

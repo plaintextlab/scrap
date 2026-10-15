@@ -67,11 +67,13 @@ pub struct Row<'a> {
     /// Some(open) draws a disclosure caret for folders.
     pub caret: Option<bool>,
     pub height: f32,
+    /// Icon colour; muted (or the accent when selected) if None.
+    pub tint: Option<Color32>,
 }
 
 impl<'a> Row<'a> {
     pub fn new(glyph: &'a str, label: &'a str) -> Self {
-        Row { glyph, label, detail: None, indent: 0.0, selected: false, caret: None, height: 30.0 }
+        Row { glyph, label, detail: None, indent: 0.0, selected: false, caret: None, height: 30.0, tint: None }
     }
 }
 
@@ -99,7 +101,7 @@ pub fn row(ui: &mut Ui, r: Row) -> Response {
         painter.text(Pos2::new(x + 6.0, cy), Align2::CENTER_CENTER, caret, FontId::proportional(11.0), p.faint);
     }
     x += 14.0;
-    let icon_color = if r.selected { p.accent } else { p.muted };
+    let icon_color = r.tint.unwrap_or(if r.selected { p.accent } else { p.muted });
     painter.text(Pos2::new(x + 8.0, cy), Align2::CENTER_CENTER, r.glyph, FontId::proportional(16.0), icon_color);
     x += 24.0;
 

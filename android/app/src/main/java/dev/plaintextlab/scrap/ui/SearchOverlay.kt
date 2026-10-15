@@ -193,7 +193,7 @@ private fun ResultRow(name: String, folder: String, text: String?, query: String
         supportingContent = if (text.isNullOrEmpty()) null else ({
             Text(highlight(text, query), maxLines = 2, overflow = TextOverflow.Ellipsis)
         }),
-        leadingContent = { Icon(ScrapIcons.Note, contentDescription = null) },
+        leadingContent = { Icon(ScrapIcons.Note, contentDescription = null, tint = LocalGruvbox.current.blue) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
     )

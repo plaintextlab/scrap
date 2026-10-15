@@ -18,7 +18,7 @@ The desktop and Android apps share the same core and the same features:
 - **`[[Wiki links]]`**, including `[[Note|alias]]` and `[[Note#heading]]`. Click in Read mode, or Ctrl/Cmd+click in the editor. Linking to a note that doesn't exist creates it. **Backlinks and outgoing links** panel.
 - **Renaming a note updates links** to it across the vault; **moving one keeps its image links working**.
 - **Trash**: deleted notes and folders can be restored to where they were (with Undo right after deleting), deleted forever, or emptied.
-- **Light, dark or system theme**, adjustable text size, notes open in Edit, Read or the last used view.
+- **[Gruvbox](https://github.com/morhetz/gruvbox) dark and light themes** (or follow the system) with a one-click toggle, colour-coded icons, adjustable text size, notes open in Edit, Read or the last used view.
 - **Autosave**, back/forward history, word and character counts.
 - **Git sync**: commit, pull and push in one click, automatically on a timer, when the vault opens and when the app closes. If the same note changed on two devices, **both versions are kept** (`Note (conflict).md`) instead of leaving conflict markers.
 
@@ -71,7 +71,7 @@ Prebuilt binaries for Windows, macOS (Apple Silicon and Intel) and Linux are on 
 **Android:** each release also has an `android-arm64.apk`: a native Material 3 app (Jetpack Compose) on the same Rust core, with:
 
 - GitHub sync over HTTPS with a personal access token (stored encrypted with the Android Keystore). Syncs on open, when you leave the app, on pull-to-refresh and optionally hourly in the background.
-- Settings: theme (system/light/dark), dynamic colour, text size, open notes in edit or read mode.
+- Settings: Gruvbox theme (system/light/dark, plus a toggle in the top bar), the app name shown in the launcher (Scrap, Notes, Notebook, Journal, Wiki, Vault or Memo), text size, open notes in edit or read mode.
 - The formatting toolbar sits above the keyboard, images can come from the camera, and you can "Share to Scrap" from other apps.
 
 Notes live in `Android/data/dev.plaintextlab.scrap/files/vault`. Unless the repo has a signing key configured (`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` secrets, key alias `scrap`), uninstall the previous version before installing a new one.

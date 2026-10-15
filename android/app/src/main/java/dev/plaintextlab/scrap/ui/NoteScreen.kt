@@ -62,6 +62,7 @@ import com.mikepenz.markdown.coil3.Coil3ImageTransformerImpl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.mikepenz.markdown.m3.Markdown
+import com.mikepenz.markdown.m3.markdownColor
 import dev.plaintextlab.scrap.Attachments
 import dev.plaintextlab.scrap.NoteRef
 import java.io.File
@@ -126,7 +127,7 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
                             )
                             DropdownMenuItem(
                                 text = { Text("Move to…") },
-                                leadingIcon = { Icon(ScrapIcons.Move, null) },
+                                leadingIcon = { Icon(ScrapIcons.Move, null, tint = LocalGruvbox.current.orange) },
                                 onClick = {
                                     menu = false
                                     moving = true
@@ -134,7 +135,7 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
                             )
                             DropdownMenuItem(
                                 text = { Text("Delete") },
-                                leadingIcon = { Icon(Icons.Default.Delete, null) },
+                                leadingIcon = { Icon(Icons.Default.Delete, null, tint = LocalGruvbox.current.red) },
                                 onClick = {
                                     menu = false
                                     deleting = true
@@ -242,6 +243,11 @@ private fun Reader(vm: VaultViewModel, rel: String, text: String, padding: Paddi
                 when (block) {
                     is Attachments.Block.Text -> Markdown(
                         content = block.markdown,
+                        colors = markdownColor(
+                            linkText = LocalGruvbox.current.blue,
+                            codeText = LocalGruvbox.current.green,
+                            codeBackground = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ),
                         imageTransformer = Coil3ImageTransformerImpl,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -275,7 +281,7 @@ private fun LinksSheet(vm: VaultViewModel, rel: String, text: String, onDismiss:
                 ListItem(
                     headlineContent = { Text(b.name) },
                     supportingContent = { Text(b.rel, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    leadingContent = { Icon(ScrapIcons.Note, null) },
+                    leadingContent = { Icon(ScrapIcons.Note, null, tint = LocalGruvbox.current.blue) },
                     modifier = Modifier.clickable {
                         onDismiss()
                         vm.navigate(Screen.Note(b.rel))
@@ -289,7 +295,7 @@ private fun LinksSheet(vm: VaultViewModel, rel: String, text: String, onDismiss:
                 ListItem(
                     headlineContent = { Text(o.target) },
                     supportingContent = if (o.exists) null else ({ Text("Not created yet, tap to create") }),
-                    leadingContent = { Icon(ScrapIcons.Link, null) },
+                    leadingContent = { Icon(ScrapIcons.Link, null, tint = LocalGruvbox.current.aqua) },
                     modifier = Modifier.clickable {
                         onDismiss()
                         vm.openLink(o.target)

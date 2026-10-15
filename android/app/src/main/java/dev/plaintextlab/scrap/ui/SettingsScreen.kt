@@ -36,6 +36,18 @@ import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
+import dev.plaintextlab.scrap.LauncherName
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -54,6 +66,8 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
     val s = vm.settings
     val context = LocalContext.current
     val uri = LocalUriHandler.current
+    val gruvbox = LocalGruvbox.current
+    var pickingName by remember { mutableStateOf(false) }
     val version = remember(context) {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
     }
@@ -92,14 +106,14 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                     },
                 )
             }
-            if (dynamicColorSupported) {
-                item {
-                    SwitchItem(
-                        title = "Dynamic colour",
-                        summary = "Use colours from your wallpaper",
-                        checked = s.dynamicColor,
-                    ) { on -> vm.updateSettings { it.copy(dynamicColor = on) } }
-                }
+            item {
+                ListItem(
+                    headlineContent = { Text("App name") },
+                    supportingContent = { Text("Shown under the icon in your launcher: ${vm.appName}") },
+                    leadingContent = { Icon(ScrapIcons.Label, contentDescription = null, tint = gruvbox.purple) },
+                    trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
+                    modifier = Modifier.clickable { pickingName = true },
+                )
             }
             item {
                 ListItem(
@@ -138,7 +152,7 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                     ListItem(
                         headlineContent = { Text(repoLabel(s.sync.url)) },
                         supportingContent = { SyncStatusText(vm.syncStatus) },
-                        leadingContent = { Icon(ScrapIcons.Sync, contentDescription = null) },
+                        leadingContent = { Icon(ScrapIcons.Sync, contentDescription = null, tint = gruvbox.aqua) },
                         trailingContent = {
                             if (vm.syncing) {
                                 CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
@@ -175,7 +189,7 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                     ListItem(
                         headlineContent = { Text("Connect to GitHub") },
                         supportingContent = { Text("Back up your notes and sync them with your other devices") },
-                        leadingContent = { Icon(ScrapIcons.Sync, contentDescription = null) },
+                        leadingContent = { Icon(ScrapIcons.Sync, contentDescription = null, tint = gruvbox.aqua) },
                         trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
                         modifier = Modifier.clickable { vm.navigate(Screen.SyncSetup) },
                     )
@@ -187,7 +201,7 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                 ListItem(
                     headlineContent = { Text("Scrap $version") },
                     supportingContent = { Text("${vm.notes.size} notes in ${vm.vaultPath}") },
-                    leadingContent = { Icon(Icons.Default.Info, contentDescription = null) },
+                    leadingContent = { Icon(Icons.Default.Info, contentDescription = null, tint = gruvbox.blue) },
                 )
             }
             item {
@@ -199,6 +213,50 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
             }
         }
     }
+
+    if (pickingName) {
+        AppNameDialog(
+            current = vm.appName,
+            onDismiss = { pickingName = false },
+            onPick = {
+                pickingName = false
+                vm.changeAppName(it)
+            },
+        )
+    }
+}
+
+@Composable
+private fun AppNameDialog(current: String, onDismiss: () -> Unit, onPick: (String) -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(ScrapIcons.Label, contentDescription = null) },
+        title = { Text("App name") },
+        text = {
+            Column(Modifier.selectableGroup()) {
+                for (name in LauncherName.presets) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .selectable(selected = name == current, role = Role.RadioButton) { onPick(name) }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = name == current, onClick = null)
+                        Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 16.dp))
+                    }
+                }
+                Text(
+                    "Home screen shortcuts may need to be re-added after a change.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

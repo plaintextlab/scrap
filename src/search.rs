@@ -201,7 +201,7 @@ fn item_ui(ui: &mut egui::Ui, v: &Vault, item: &Item, selected: bool, q: &str, p
             let note = &v.notes[*index];
             let folder = vault::parent(&note.rel);
             let top = if line.is_some() { rect.top() + 16.0 } else { rect.center().y };
-            let glyph_color = if selected { p.accent } else { p.muted };
+            let glyph_color = p.blue;
             painter.text(Pos2::new(x + 8.0, top), Align2::CENTER_CENTER, icon::FILE_TEXT, FontId::proportional(16.0), glyph_color);
             let mut job = highlighted(&note.name, q, FontId::new(14.0, theme::semibold()), p.text, p.accent);
             if !folder.is_empty() {

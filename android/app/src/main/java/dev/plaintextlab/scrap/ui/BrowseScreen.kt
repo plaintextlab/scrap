@@ -87,7 +87,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
         topBar = {
             LargeTopAppBar(
                 title = {
-                    Text(if (folder.isEmpty()) "Notes" else nameOf(folder), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(if (folder.isEmpty()) vm.appName else nameOf(folder), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 },
                 navigationIcon = {
                     if (folder.isNotEmpty()) {
@@ -100,12 +100,19 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
                     IconButton(onClick = { vm.openSearch() }) {
                         Icon(Icons.Default.Search, contentDescription = "Search")
                     }
+                    val dark = LocalGruvbox.current.isDark
+                    IconButton(onClick = { vm.toggleDark(dark) }) {
+                        Icon(
+                            if (dark) ScrapIcons.LightMode else ScrapIcons.DarkMode,
+                            contentDescription = if (dark) "Light theme" else "Dark theme",
+                        )
+                    }
                     if (vm.settings.sync.configured) {
                         IconButton(onClick = { vm.syncNow() }, enabled = !vm.syncing) {
                             if (vm.syncing) {
                                 CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                             } else {
-                                Icon(ScrapIcons.Sync, contentDescription = "Sync")
+                                Icon(ScrapIcons.Sync, contentDescription = "Sync", tint = LocalGruvbox.current.aqua)
                             }
                         }
                     }
@@ -133,7 +140,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Delete folder") },
-                                    leadingIcon = { Icon(Icons.Default.Delete, null) },
+                                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = LocalGruvbox.current.red) },
                                     onClick = {
                                         menu = false
                                         deleting = folder
@@ -152,7 +159,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
                             HorizontalDivider()
                             DropdownMenuItem(
                                 text = { Text("Trash") },
-                                leadingIcon = { Icon(Icons.Default.Delete, null) },
+                                leadingIcon = { Icon(Icons.Default.Delete, null, tint = LocalGruvbox.current.red) },
                                 onClick = {
                                     menu = false
                                     vm.navigate(Screen.Trash)
@@ -206,7 +213,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
                                 val count = vm.notes.count { it.rel.startsWith("$f/") }
                                 Text(if (count == 1) "1 note" else "$count notes")
                             },
-                            leadingContent = { Icon(ScrapIcons.Folder, contentDescription = null) },
+                            leadingContent = { Icon(ScrapIcons.Folder, contentDescription = null, tint = LocalGruvbox.current.yellow) },
                             modifier = Modifier
                                 .animateItem()
                                 .combinedClickable(
@@ -248,7 +255,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
             )
             ListItem(
                 headlineContent = { Text("Move to…") },
-                leadingContent = { Icon(ScrapIcons.Move, null) },
+                leadingContent = { Icon(ScrapIcons.Move, null, tint = LocalGruvbox.current.orange) },
                 modifier = Modifier.combinedClickable(onClick = {
                     actionsFor = null
                     moving = rel
@@ -256,7 +263,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
             )
             ListItem(
                 headlineContent = { Text("Delete") },
-                leadingContent = { Icon(Icons.Default.Delete, null) },
+                leadingContent = { Icon(Icons.Default.Delete, null, tint = LocalGruvbox.current.red) },
                 modifier = Modifier.combinedClickable(onClick = {
                     actionsFor = null
                     deleting = rel
@@ -309,7 +316,7 @@ private fun NoteRow(note: NoteRef, modifier: Modifier) {
         } else {
             null
         },
-        leadingContent = { Icon(ScrapIcons.Note, contentDescription = null) },
+        leadingContent = { Icon(ScrapIcons.Note, contentDescription = null, tint = LocalGruvbox.current.blue) },
         modifier = modifier,
     )
 }

@@ -105,7 +105,7 @@ fun MoveDialog(rel: String, isFolder: Boolean, folders: List<String>, onDismiss:
     val targets = remember(folders) { listOf("") + folders.sortedBy { it.lowercase().replace('/', '\u0000') } }
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(ScrapIcons.Move, contentDescription = null) },
+        icon = { Icon(ScrapIcons.Move, contentDescription = null, tint = LocalGruvbox.current.orange) },
         title = { Text("Move “${titleOf(rel)}” to") },
         text = {
             LazyColumn(Modifier.heightIn(max = 360.dp)) {
@@ -122,6 +122,7 @@ fun MoveDialog(rel: String, isFolder: Boolean, folders: List<String>, onDismiss:
                             Icon(
                                 if (folder.isEmpty()) ScrapIcons.Note else ScrapIcons.Folder,
                                 contentDescription = null,
+                                tint = if (folder.isEmpty()) LocalGruvbox.current.blue else LocalGruvbox.current.yellow,
                                 modifier = Modifier.padding(start = (16 * maxOf(depth - 1, 0)).dp),
                             )
                         },
@@ -142,7 +143,7 @@ fun MoveDialog(rel: String, isFolder: Boolean, folders: List<String>, onDismiss:
 fun ConfirmDelete(name: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+        icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = LocalGruvbox.current.red) },
         title = { Text("Delete “$name”?") },
         text = { Text("It will be moved to the trash, where you can restore it from ⋮ › Trash.") },
         confirmButton = { TextButton(onClick = onConfirm) { Text("Delete") } },

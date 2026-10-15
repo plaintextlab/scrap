@@ -25,6 +25,10 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
 
     var settings by mutableStateOf(store.load())
         private set
+
+    /** Name under the launcher icon (see [LauncherName]). */
+    var appName by mutableStateOf(LauncherName.current(app))
+        private set
     var ready by mutableStateOf(false)
         private set
     var folders by mutableStateOf(emptyList<String>())
@@ -137,6 +141,18 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
         settings = change(settings)
         store.save(settings)
         Sync.schedulePeriodic(app, settings.sync.configured && settings.sync.background)
+    }
+
+    /** Switches between Gruvbox dark and light, starting from whatever is showing now. */
+    fun toggleDark(currentlyDark: Boolean) {
+        updateSettings { it.copy(theme = if (currentlyDark) ThemeMode.Light else ThemeMode.Dark) }
+    }
+
+    fun changeAppName(name: String) {
+        if (name == appName) return
+        LauncherName.set(app, name)
+        appName = name
+        message = "The launcher will show “$name” in a moment"
     }
 
     /** Saves the connection details and runs a first sync; returns to Settings on success. */

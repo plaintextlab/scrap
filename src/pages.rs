@@ -51,6 +51,7 @@ impl App {
                             let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
                             let full = path.display().to_string();
                             let mut row = Row::new(icon::FOLDER_SIMPLE, &name);
+                            row.tint = Some(p.yellow);
                             row.detail = Some(&full);
                             row.height = 34.0;
                             if widgets::row(ui, row).on_hover_text(&full).clicked() {
@@ -350,6 +351,7 @@ impl App {
                 let note = &v.notes[i];
                 let folder = vault::parent(&note.rel);
                 let mut row = Row::new(icon::FILE_TEXT, &note.name);
+                row.tint = Some(p.blue);
                 row.detail = (!folder.is_empty()).then_some(folder);
                 if widgets::row(ui, row).clicked() {
                     actions.push(Action::Open(note.rel.clone()));
@@ -365,6 +367,7 @@ impl App {
             for link in links {
                 let exists = v.resolve(&link).is_some();
                 let mut row = Row::new(if exists { icon::FILE_TEXT } else { icon::FILE_DASHED }, &link);
+                row.tint = Some(if exists { p.aqua } else { p.faint });
                 row.detail = (!exists).then_some("create");
                 let resp = widgets::row(ui, row);
                 let hint = if exists { "Open" } else { "Not created yet; click to create it" };

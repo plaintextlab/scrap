@@ -16,15 +16,15 @@ import androidx.compose.ui.unit.em
 /**
  * Styles markdown in the editor without changing the text, so cursor positions map 1:1.
  */
-class MarkdownHighlight(private val c: ColorScheme) : VisualTransformation {
+class MarkdownHighlight(private val c: ColorScheme, private val g: GruvboxColors) : VisualTransformation {
 
     override fun filter(text: AnnotatedString): TransformedText =
         TransformedText(highlight(text.text), OffsetMapping.Identity)
 
     private val dim = SpanStyle(color = c.onSurfaceVariant.copy(alpha = 0.6f))
-    private val code = SpanStyle(fontFamily = FontFamily.Monospace, background = c.surfaceVariant)
-    private val link = SpanStyle(color = c.primary)
-    private val marker = SpanStyle(color = c.primary, fontWeight = FontWeight.Bold)
+    private val code = SpanStyle(fontFamily = FontFamily.Monospace, color = g.green, background = c.surfaceVariant)
+    private val link = SpanStyle(color = g.blue)
+    private val marker = SpanStyle(color = g.orange, fontWeight = FontWeight.Bold)
     private val headingSizes = listOf(1.6f, 1.4f, 1.25f, 1.1f, 1.05f, 1f)
 
     private val heading = Regex("""^\s{0,3}(#{1,6})\s""")
@@ -36,7 +36,7 @@ class MarkdownHighlight(private val c: ColorScheme) : VisualTransformation {
         Regex("""~~[^~\n]+~~""") to SpanStyle(textDecoration = TextDecoration.LineThrough),
         Regex("""\[\[[^\]\n]+]]""") to link,
         Regex("""\[[^\]\n]+]\([^)\n]+\)""") to link,
-        Regex("""(?<=^|\s)#[\p{L}\p{N}_/-]+""") to SpanStyle(color = c.tertiary),
+        Regex("""(?<=^|\s)#[\p{L}\p{N}_/-]+""") to SpanStyle(color = g.aqua),
     )
 
     private fun highlight(s: String): AnnotatedString = buildAnnotatedString {
@@ -57,13 +57,13 @@ class MarkdownHighlight(private val c: ColorScheme) : VisualTransformation {
                     if (h != null) {
                         val level = h.groupValues[1].length
                         addStyle(
-                            SpanStyle(fontWeight = FontWeight.Bold, fontSize = headingSizes[level - 1].em),
+                            SpanStyle(color = g.yellow, fontWeight = FontWeight.Bold, fontSize = headingSizes[level - 1].em),
                             start,
                             end,
                         )
                         addStyle(dim, start, start + h.range.last)
                     } else if (trimmed.startsWith(">")) {
-                        addStyle(SpanStyle(fontStyle = FontStyle.Italic, color = c.onSurfaceVariant), start, end)
+                        addStyle(SpanStyle(fontStyle = FontStyle.Italic, color = g.gray), start, end)
                     } else {
                         listMarker.find(line)?.let { addStyle(marker, start, start + it.range.last) }
                     }
