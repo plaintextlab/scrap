@@ -204,6 +204,8 @@ jobs:
         with:
           gradle-version: "8.11.1"
       - name: Signing key
+        # The keystore and its password are backed up outside the repo (~/.scrap-signing on the
+        # maintainer's machine); losing them means installed apps can no longer be updated.
         # Every release must be signed with the same key (repo secrets ANDROID_KEYSTORE_BASE64
         # and ANDROID_KEYSTORE_PASSWORD, a PKCS#12 keystore with key alias "scrap"); otherwise
         # Android refuses to install the update over the existing app. Branch builds without
