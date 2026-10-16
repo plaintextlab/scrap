@@ -36,11 +36,12 @@ import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import dev.plaintextlab.scrap.ThemeName
 import androidx.compose.material3.Surface
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
@@ -109,11 +110,15 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                     supportingContent = {
                         Column {
                             Text("The app icon follows the theme.")
-                            LazyRow(
+                            // A plain scrolling Row, not a LazyRow: ListItem measures its
+                            // content's intrinsic height, which lazy layouts can't report.
+                            Row(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                contentPadding = PaddingValues(vertical = 10.dp),
+                                modifier = Modifier
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(vertical = 10.dp),
                             ) {
-                                items(ThemeName.entries, key = { it.id }) { t ->
+                                for (t in ThemeName.entries) {
                                     ThemeSwatch(t, selected = t == s.colorTheme, dark = accents.isDark) {
                                         vm.changeTheme(t)
                                     }
