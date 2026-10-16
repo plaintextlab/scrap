@@ -65,8 +65,10 @@ impl App {
     }
 
     pub(crate) fn dev_after(&mut self, ctx: &egui::Context) {
+        // Wait for an update check started by the script to finish.
+        let waiting = self.updater.busy();
         let Some(dev) = &mut self.dev else { return };
-        if dev.frame >= SETTLE_FRAMES && !dev.requested {
+        if dev.frame >= SETTLE_FRAMES && !dev.requested && !waiting {
             dev.requested = true;
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(UserData::default()));
         }
@@ -85,6 +87,13 @@ impl App {
             }
             "search" => self.search = Some(SearchState { query: arg.to_string(), selected: 0 }),
             "page" => self.run(Action::Page(if arg == "trash" { Page::Trash } else { Page::Settings })),
+            "checkupdate" => self.updater.check(ctx),
+            "palette" => {
+                if let Some(t) = crate::theme::ThemeName::ALL.into_iter().find(|t| t.id() == arg) {
+                    self.s.color_theme = t;
+                    crate::theme::apply(&self.ctx, t);
+                }
+            }
             "theme" => {
                 self.s.theme = if arg == "dark" { ThemeChoice::Dark } else { ThemeChoice::Light };
                 self.apply_theme();

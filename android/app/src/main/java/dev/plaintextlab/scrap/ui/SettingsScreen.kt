@@ -36,6 +36,15 @@ import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import dev.plaintextlab.scrap.ThemeName
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import dev.plaintextlab.scrap.Repo
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Add
@@ -70,7 +79,7 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
     val s = vm.settings
     val context = LocalContext.current
     val uri = LocalUriHandler.current
-    val gruvbox = LocalGruvbox.current
+    val accents = LocalAccents.current
     var pickingName by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<Repo?>(null) }
     val version = remember(context) {
@@ -98,6 +107,26 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                 ListItem(
                     headlineContent = { Text("Theme") },
                     supportingContent = {
+                        Column {
+                            Text("The app icon follows the theme.")
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                contentPadding = PaddingValues(vertical = 10.dp),
+                            ) {
+                                items(ThemeName.entries, key = { it.id }) { t ->
+                                    ThemeSwatch(t, selected = t == s.colorTheme, dark = accents.isDark) {
+                                        vm.changeTheme(t)
+                                    }
+                                }
+                            }
+                        }
+                    },
+                )
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text("Mode") },
+                    supportingContent = {
                         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                             val modes = ThemeMode.entries
                             modes.forEachIndexed { i, mode ->
@@ -115,7 +144,7 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                 ListItem(
                     headlineContent = { Text("App name") },
                     supportingContent = { Text("Shown under the icon in your launcher: ${vm.appName}") },
-                    leadingContent = { Icon(ScrapIcons.Label, contentDescription = null, tint = gruvbox.purple) },
+                    leadingContent = { Icon(ScrapIcons.Label, contentDescription = null, tint = accents.purple) },
                     trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
                     modifier = Modifier.clickable { pickingName = true },
                 )
@@ -157,7 +186,7 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                     ListItem(
                         headlineContent = { Text(vm.activeRepo.label) },
                         supportingContent = { SyncStatusText(vm.syncStatus) },
-                        leadingContent = { Icon(ScrapIcons.Sync, contentDescription = null, tint = gruvbox.aqua) },
+                        leadingContent = { Icon(ScrapIcons.Sync, contentDescription = null, tint = accents.aqua) },
                         trailingContent = {
                             if (vm.syncing) {
                                 CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
@@ -194,7 +223,7 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                     ListItem(
                         headlineContent = { Text("Connect to GitHub") },
                         supportingContent = { Text("Back up your notes and sync them with your other devices") },
-                        leadingContent = { Icon(ScrapIcons.Sync, contentDescription = null, tint = gruvbox.aqua) },
+                        leadingContent = { Icon(ScrapIcons.Sync, contentDescription = null, tint = accents.aqua) },
                         trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
                         modifier = Modifier.clickable { vm.navigate(Screen.SyncSetup()) },
                     )
@@ -223,14 +252,14 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                         )
                     },
                     leadingContent = {
-                        Icon(ScrapIcons.Folder, contentDescription = null, tint = if (open) gruvbox.aqua else gruvbox.yellow)
+                        Icon(ScrapIcons.Folder, contentDescription = null, tint = if (open) accents.aqua else accents.yellow)
                     },
                     trailingContent = {
                         if (open) {
-                            Text("Open", color = gruvbox.green, style = MaterialTheme.typography.labelLarge)
+                            Text("Open", color = accents.green, style = MaterialTheme.typography.labelLarge)
                         } else {
                             IconButton(onClick = { removing = repo }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Remove ${repo.label}", tint = gruvbox.red)
+                                Icon(Icons.Default.Delete, contentDescription = "Remove ${repo.label}", tint = accents.red)
                             }
                         }
                     },
@@ -241,7 +270,7 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                 ListItem(
                     headlineContent = { Text("Add repository") },
                     supportingContent = { Text("Sync another GitHub repository as a separate set of notes") },
-                    leadingContent = { Icon(Icons.Default.Add, contentDescription = null, tint = gruvbox.aqua) },
+                    leadingContent = { Icon(Icons.Default.Add, contentDescription = null, tint = accents.aqua) },
                     trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
                     modifier = Modifier.clickable { vm.navigate(Screen.SyncSetup(adding = true)) },
                 )
@@ -252,7 +281,7 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                 ListItem(
                     headlineContent = { Text("Scrap $version") },
                     supportingContent = { Text("${vm.notes.size} notes in ${vm.vaultPath}") },
-                    leadingContent = { Icon(Icons.Default.Info, contentDescription = null, tint = gruvbox.blue) },
+                    leadingContent = { Icon(Icons.Default.Info, contentDescription = null, tint = accents.blue) },
                 )
             }
             item {
@@ -268,7 +297,7 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
     removing?.let { repo ->
         AlertDialog(
             onDismissRequest = { removing = null },
-            icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = gruvbox.red) },
+            icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = accents.red) },
             title = { Text("Remove “${repo.label}”?") },
             text = {
                 Text(
@@ -372,3 +401,30 @@ fun SyncStatusText(status: SyncStatus?) {
 
 fun repoLabel(url: String): String =
     url.removePrefix("https://").removePrefix("http://").removePrefix("github.com/").removeSuffix(".git")
+
+/** A tappable preview of a colour theme in the current light/dark mode. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ThemeSwatch(t: ThemeName, selected: Boolean, dark: Boolean, onClick: () -> Unit) {
+    val p = palette(t, dark)
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        color = p.bg,
+        border = BorderStroke(
+            if (selected) 2.dp else 1.dp,
+            if (selected) MaterialTheme.colorScheme.primary else p.border,
+        ),
+        modifier = Modifier.size(width = 116.dp, height = 72.dp),
+    ) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                for (color in listOf(p.accent, p.red, p.green, p.blue, p.purple)) {
+                    Box(Modifier.size(11.dp).background(color, CircleShape))
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            Text(t.label, color = p.text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        }
+    }
+}

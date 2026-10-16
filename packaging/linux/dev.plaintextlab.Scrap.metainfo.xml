@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.plaintextlab.Scrap</id>
+  <name>Scrap</name>
+  <summary>Plain markdown notes in a folder, synced with git</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="dev.plaintextlab">
+    <name>plaintextlab</name>
+  </developer>
+  <description>
+    <p>
+      A minimal notes app. Your notes are plain markdown files in a folder, linked with
+      [[wiki links]], searchable instantly and synced with git. Folders, a trash you can
+      restore from, images and a formatting toolbar included.
+    </p>
+  </description>
+  <launchable type="desktop-id">dev.plaintextlab.Scrap.desktop</launchable>
+  <url type="homepage">https://github.com/plaintextlab/scrap</url>
+  <content_rating type="oars-1.1"/>
+  <provides>
+    <binary>scrap</binary>
+  </provides>
+</component>

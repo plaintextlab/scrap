@@ -107,7 +107,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
                     IconButton(onClick = { vm.openSearch() }) {
                         Icon(Icons.Default.Search, contentDescription = "Search")
                     }
-                    val dark = LocalGruvbox.current.isDark
+                    val dark = LocalAccents.current.isDark
                     IconButton(onClick = { vm.toggleDark(dark) }) {
                         Icon(
                             if (dark) ScrapIcons.LightMode else ScrapIcons.DarkMode,
@@ -119,7 +119,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
                             if (vm.syncing) {
                                 CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                             } else {
-                                Icon(ScrapIcons.Sync, contentDescription = "Sync", tint = LocalGruvbox.current.aqua)
+                                Icon(ScrapIcons.Sync, contentDescription = "Sync", tint = LocalAccents.current.aqua)
                             }
                         }
                     }
@@ -147,7 +147,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Delete folder") },
-                                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = LocalGruvbox.current.red) },
+                                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = LocalAccents.current.red) },
                                     onClick = {
                                         menu = false
                                         deleting = folder
@@ -166,7 +166,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
                             HorizontalDivider()
                             DropdownMenuItem(
                                 text = { Text("Trash") },
-                                leadingIcon = { Icon(Icons.Default.Delete, null, tint = LocalGruvbox.current.red) },
+                                leadingIcon = { Icon(Icons.Default.Delete, null, tint = LocalAccents.current.red) },
                                 onClick = {
                                     menu = false
                                     vm.navigate(Screen.Trash)
@@ -220,7 +220,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
                                 val count = vm.notes.count { it.rel.startsWith("$f/") }
                                 Text(if (count == 1) "1 note" else "$count notes")
                             },
-                            leadingContent = { Icon(ScrapIcons.Folder, contentDescription = null, tint = LocalGruvbox.current.yellow) },
+                            leadingContent = { Icon(ScrapIcons.Folder, contentDescription = null, tint = LocalAccents.current.yellow) },
                             modifier = Modifier
                                 .animateItem()
                                 .combinedClickable(
@@ -262,7 +262,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
             )
             ListItem(
                 headlineContent = { Text("Move to…") },
-                leadingContent = { Icon(ScrapIcons.Move, null, tint = LocalGruvbox.current.orange) },
+                leadingContent = { Icon(ScrapIcons.Move, null, tint = LocalAccents.current.orange) },
                 modifier = Modifier.combinedClickable(onClick = {
                     actionsFor = null
                     moving = rel
@@ -270,7 +270,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
             )
             ListItem(
                 headlineContent = { Text("Delete") },
-                leadingContent = { Icon(Icons.Default.Delete, null, tint = LocalGruvbox.current.red) },
+                leadingContent = { Icon(Icons.Default.Delete, null, tint = LocalAccents.current.red) },
                 modifier = Modifier.combinedClickable(onClick = {
                     actionsFor = null
                     deleting = rel
@@ -323,7 +323,7 @@ private fun NoteRow(note: NoteRef, modifier: Modifier) {
         } else {
             null
         },
-        leadingContent = { Icon(ScrapIcons.Note, contentDescription = null, tint = LocalGruvbox.current.blue) },
+        leadingContent = { Icon(ScrapIcons.Note, contentDescription = null, tint = LocalAccents.current.blue) },
         modifier = modifier,
     )
 }
@@ -370,7 +370,7 @@ private fun EmptyFolder(modifier: Modifier) {
 @Composable
 private fun RepoSwitcher(vm: VaultViewModel) {
     var open by remember { mutableStateOf(false) }
-    val gruvbox = LocalGruvbox.current
+    val accents = LocalAccents.current
     val title = if (vm.repos.size > 1) vm.activeRepo.label else vm.appName
     Box {
         Row(
@@ -386,7 +386,7 @@ private fun RepoSwitcher(vm: VaultViewModel) {
                 DropdownMenuItem(
                     text = { Text(repo.label) },
                     leadingIcon = {
-                        Icon(ScrapIcons.Folder, contentDescription = null, tint = if (current) gruvbox.aqua else gruvbox.yellow)
+                        Icon(ScrapIcons.Folder, contentDescription = null, tint = if (current) accents.aqua else accents.yellow)
                     },
                     trailingIcon = { if (current) Icon(Icons.Default.Check, contentDescription = "Open") },
                     onClick = {
@@ -398,7 +398,7 @@ private fun RepoSwitcher(vm: VaultViewModel) {
             HorizontalDivider()
             DropdownMenuItem(
                 text = { Text("Add repository") },
-                leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, tint = gruvbox.aqua) },
+                leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, tint = accents.aqua) },
                 onClick = {
                     open = false
                     vm.navigate(Screen.SyncSetup(adding = true))

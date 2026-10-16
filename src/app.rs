@@ -68,6 +68,8 @@ pub struct Settings {
     pub recent: Vec<PathBuf>,
     pub last_note: Option<String>,
     pub theme: ThemeChoice,
+    /// Colour scheme (Gruvbox, Nord, ...); `theme` picks its light or dark variant.
+    pub color_theme: theme::ThemeName,
     pub font_size: f32,
     pub view: View,
     pub open_in: OpenIn,
@@ -79,6 +81,8 @@ pub struct Settings {
     pub auto_sync_minutes: u32,
     pub sync_on_open: bool,
     pub sync_on_close: bool,
+    /// Look for a new release when Scrap starts.
+    pub check_updates: bool,
 }
 
 impl Default for Settings {
@@ -89,6 +93,7 @@ impl Default for Settings {
             recent: Vec::new(),
             last_note: None,
             theme: ThemeChoice::System,
+            color_theme: theme::ThemeName::Gruvbox,
             font_size: 16.0,
             view: View::Edit,
             open_in: OpenIn::Last,
@@ -99,6 +104,7 @@ impl Default for Settings {
             auto_sync_minutes: 10,
             sync_on_open: true,
             sync_on_close: true,
+            check_updates: true,
         }
     }
 }
@@ -151,6 +157,10 @@ pub(crate) enum Action {
     OpenVault,
     CloneVault,
     SwitchRepo(PathBuf),
+    CheckUpdates,
+    InstallUpdate,
+    /// Quits and starts the freshly installed version.
+    RestartForUpdate,
     /// Drops a vault from the switcher; its files stay on disk.
     RemoveRepo(PathBuf),
     Back,
@@ -208,12 +218,15 @@ pub struct App {
     pub(crate) backlinks: Vec<usize>,
     pub(crate) backlinks_key: (String, u64),
     pub(crate) dev: Option<crate::dev::Dev>,
+    pub(crate) updater: crate::update::Updater,
+    /// Set when an update is installed: started once this instance has saved and exited.
+    pub(crate) restart: Option<crate::update::Restart>,
 }
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, vault: Option<PathBuf>) -> Self {
         let s: Settings = cc.storage.and_then(|st| eframe::get_value(st, eframe::APP_KEY)).unwrap_or_default();
-        theme::install(&cc.egui_ctx);
+        theme::install(&cc.egui_ctx, s.color_theme);
         egui_extras::install_image_loaders(&cc.egui_ctx);
         let mut app = App {
             ctx: cc.egui_ctx.clone(),
@@ -240,10 +253,15 @@ impl App {
             backlinks: Vec::new(),
             backlinks_key: (String::new(), 0),
             dev: crate::dev::Dev::from_env(),
+            updater: crate::update::Updater::new(),
+            restart: None,
         };
         app.apply_theme();
         if let Some(path) = vault.or_else(|| app.s.vault.clone()) {
             app.open_vault(path);
+        }
+        if app.s.check_updates && app.dev.is_none() {
+            app.updater.check(&app.ctx);
         }
         app
     }
@@ -618,6 +636,17 @@ impl App {
                 self.info("Saved");
             }
             Action::Sync => self.sync(),
+            Action::CheckUpdates => self.updater.check(&self.ctx),
+            Action::InstallUpdate => {
+                self.save_now();
+                self.updater.install(&self.ctx);
+            }
+            Action::RestartForUpdate => {
+                if let crate::update::State::Ready(restart) = &self.updater.state {
+                    self.restart = Some(restart.clone());
+                    self.ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
             Action::Rescan => self.rescan(),
             Action::OpenVault => {
                 if let Some(path) = rfd::FileDialog::new().set_title("Open folder as vault").pick_folder() {
@@ -1012,6 +1041,9 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         self.dev_before(&ctx);
         self.poll_git();
+        if let Some(note) = self.updater.poll() {
+            self.info(note);
+        }
         self.shortcuts(&ctx);
         self.timers(&ctx);
         self.handle_drops(&ctx);
@@ -1041,7 +1073,7 @@ impl eframe::App for App {
     }
 
     fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
-        let p = if visuals.dark_mode { theme::DARK } else { theme::LIGHT };
+        let p = theme::palette_for(visuals.dark_mode);
         p.bg.to_normalized_gamma_f32()
     }
 }
@@ -1059,5 +1091,13 @@ fn normalize(raw: String) -> (String, bool) {
         (raw.replace("\r\n", "\n"), true)
     } else {
         (raw, false)
+    }
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        if let Some(restart) = self.restart.take() {
+            restart.spawn();
+        }
     }
 }

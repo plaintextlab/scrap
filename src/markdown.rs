@@ -15,11 +15,7 @@ pub use scrap_core::links::link_at;
 const HEADING_SCALE: [f32; 6] = [1.75, 1.4, 1.2, 1.08, 1.0, 0.95];
 
 fn colors(v: &Visuals) -> Palette {
-    if v.dark_mode {
-        theme::DARK
-    } else {
-        theme::LIGHT
-    }
+    theme::palette_for(v.dark_mode)
 }
 
 fn prop(size: f32, color: Color32) -> TextFormat {

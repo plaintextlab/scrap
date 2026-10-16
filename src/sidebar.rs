@@ -153,6 +153,23 @@ impl App {
             if widgets::row(ui, settings).clicked() {
                 actions.push(Action::Page(Page::Settings));
             }
+            // A new version: one click to install it, or to restart into it.
+            let update = match &self.updater.state {
+                crate::update::State::Available(r) if r.installable() => {
+                    Some((format!("Update to {}", r.version), Action::InstallUpdate))
+                }
+                crate::update::State::Available(r) => Some((format!("Scrap {} is available", r.version), Action::Page(Page::Settings))),
+                crate::update::State::Installing(v) => Some((format!("Installing {v}…"), Action::Page(Page::Settings))),
+                crate::update::State::Ready(_) => Some(("Restart to update".to_string(), Action::RestartForUpdate)),
+                _ => None,
+            };
+            if let Some((label, action)) = update {
+                let mut row = Row::new(icon::ARROW_CIRCLE_UP, &label);
+                row.tint = Some(theme::palette(ui.ctx()).green);
+                if widgets::row(ui, row).clicked() {
+                    actions.push(action);
+                }
+            }
             let count = self.trash.len().to_string();
             let mut trash = Row::new(icon::TRASH, "Trash");
             trash.tint = Some(theme::palette(ui.ctx()).red);

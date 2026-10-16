@@ -11,9 +11,13 @@ fn main() -> eframe::Result {
     let persistence_path = std::env::var_os("SCRAP_CONFIG_DIR").map(|d| PathBuf::from(d).join("app.ron"));
     let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_title("Scrap")
-        .with_app_id("scrap")
+        // Matches the .desktop file name so Linux desktops show the right icon.
+        .with_app_id("dev.plaintextlab.Scrap")
         .with_inner_size([1180.0, 760.0])
         .with_min_inner_size([480.0, 320.0]);
+    if let Ok(icon) = eframe::icon_data::from_png_bytes(include_bytes!("../packaging/icons/scrap.png")) {
+        viewport = viewport.with_icon(icon);
+    }
     // Screenshot runs (see dev.rs) stay out of the way: off screen and unfocused.
     if std::env::var_os("SCRAP_SCREENSHOT").is_some() {
         let size = std::env::var("SCRAP_SIZE").ok().and_then(|s| {

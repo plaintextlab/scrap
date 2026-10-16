@@ -137,18 +137,34 @@ fn git(dir: Option<&Path>, args: &[&str]) -> Result<String, String> {
     git_bytes(dir, args).map(|out| String::from_utf8_lossy(&out).trim_end().to_string())
 }
 
+/// Inside the Flatpak sandbox there is no git, so the host's git is run instead. It sees
+/// the same home folder, SSH keys and credential helpers as everywhere else.
+fn in_flatpak() -> bool {
+    Path::new("/.flatpak-info").exists()
+}
+
 /// Runs git and returns its raw standard output.
 fn git_bytes(dir: Option<&Path>, args: &[&str]) -> Result<Vec<u8>, String> {
-    let mut cmd = Command::new("git");
+    // Fail instead of hanging on a terminal prompt nobody can see.
+    let env = [("GIT_TERMINAL_PROMPT", "0"), ("GIT_EDITOR", "true")];
+    let mut cmd = if in_flatpak() {
+        let mut c = Command::new("flatpak-spawn");
+        c.arg("--host");
+        for (k, v) in env {
+            c.arg(format!("--env={k}={v}"));
+        }
+        c.arg("git");
+        c
+    } else {
+        let mut c = Command::new("git");
+        c.envs(env);
+        c
+    };
     cmd.args(["-c", "core.quotepath=false"]);
     if let Some(dir) = dir {
         cmd.arg("-C").arg(dir);
     }
-    cmd.args(args)
-        // Fail instead of hanging on a terminal prompt nobody can see.
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_EDITOR", "true")
-        .stdin(Stdio::null());
+    cmd.args(args).stdin(Stdio::null());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

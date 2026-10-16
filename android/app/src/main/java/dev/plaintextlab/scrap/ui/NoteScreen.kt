@@ -127,7 +127,7 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
                             )
                             DropdownMenuItem(
                                 text = { Text("Move to…") },
-                                leadingIcon = { Icon(ScrapIcons.Move, null, tint = LocalGruvbox.current.orange) },
+                                leadingIcon = { Icon(ScrapIcons.Move, null, tint = LocalAccents.current.orange) },
                                 onClick = {
                                     menu = false
                                     moving = true
@@ -135,7 +135,7 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
                             )
                             DropdownMenuItem(
                                 text = { Text("Delete") },
-                                leadingIcon = { Icon(Icons.Default.Delete, null, tint = LocalGruvbox.current.red) },
+                                leadingIcon = { Icon(Icons.Default.Delete, null, tint = LocalAccents.current.red) },
                                 onClick = {
                                     menu = false
                                     deleting = true
@@ -244,8 +244,8 @@ private fun Reader(vm: VaultViewModel, rel: String, text: String, padding: Paddi
                     is Attachments.Block.Text -> Markdown(
                         content = block.markdown,
                         colors = markdownColor(
-                            linkText = LocalGruvbox.current.blue,
-                            codeText = LocalGruvbox.current.green,
+                            linkText = LocalAccents.current.blue,
+                            codeText = LocalAccents.current.green,
                             codeBackground = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ),
                         imageTransformer = Coil3ImageTransformerImpl,
@@ -281,7 +281,7 @@ private fun LinksSheet(vm: VaultViewModel, rel: String, text: String, onDismiss:
                 ListItem(
                     headlineContent = { Text(b.name) },
                     supportingContent = { Text(b.rel, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    leadingContent = { Icon(ScrapIcons.Note, null, tint = LocalGruvbox.current.blue) },
+                    leadingContent = { Icon(ScrapIcons.Note, null, tint = LocalAccents.current.blue) },
                     modifier = Modifier.clickable {
                         onDismiss()
                         vm.navigate(Screen.Note(b.rel))
@@ -295,7 +295,7 @@ private fun LinksSheet(vm: VaultViewModel, rel: String, text: String, onDismiss:
                 ListItem(
                     headlineContent = { Text(o.target) },
                     supportingContent = if (o.exists) null else ({ Text("Not created yet, tap to create") }),
-                    leadingContent = { Icon(ScrapIcons.Link, null, tint = LocalGruvbox.current.aqua) },
+                    leadingContent = { Icon(ScrapIcons.Link, null, tint = LocalAccents.current.aqua) },
                     modifier = Modifier.clickable {
                         onDismiss()
                         vm.openLink(o.target)

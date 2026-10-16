@@ -1,0 +1,33 @@
+# Flatpak bundle of the release binary. CI copies target/release/scrap here as `scrap`
+# before running flatpak-builder.
+app-id: dev.plaintextlab.Scrap
+runtime: org.freedesktop.Platform
+runtime-version: "24.08"
+sdk: org.freedesktop.Sdk
+command: scrap
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  # Vaults are ordinary folders anywhere in your home folder.
+  - --filesystem=home
+  # Sync runs the host's git (with your SSH keys and credential helpers) via flatpak-spawn.
+  - --talk-name=org.freedesktop.Flatpak
+modules:
+  - name: scrap
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 scrap /app/bin/scrap
+      - install -Dm644 dev.plaintextlab.Scrap.desktop /app/share/applications/dev.plaintextlab.Scrap.desktop
+      - install -Dm644 dev.plaintextlab.Scrap.metainfo.xml /app/share/metainfo/dev.plaintextlab.Scrap.metainfo.xml
+      - install -Dm644 scrap.png /app/share/icons/hicolor/512x512/apps/dev.plaintextlab.Scrap.png
+    sources:
+      - type: file
+        path: scrap
+      - type: file
+        path: ../linux/dev.plaintextlab.Scrap.desktop
+      - type: file
+        path: ../linux/dev.plaintextlab.Scrap.metainfo.xml
+      - type: file
+        path: ../icons/scrap.png

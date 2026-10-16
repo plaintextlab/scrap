@@ -158,9 +158,16 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun changeAppName(name: String) {
         if (name == appName) return
-        LauncherName.set(app, name)
+        LauncherName.set(app, name, settings.colorTheme)
         appName = name
         message = "The launcher will show “$name” in a moment"
+    }
+
+    /** Switches the colour theme; the launcher icon follows it. */
+    fun changeTheme(theme: ThemeName) {
+        if (theme == settings.colorTheme) return
+        updateSettings { it.copy(colorTheme = theme) }
+        LauncherName.set(app, appName, theme)
     }
 
     /** Saves the open repository's connection and runs a sync; returns to Settings on success. */

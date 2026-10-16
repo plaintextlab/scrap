@@ -1,0 +1,38 @@
+# .deb and .rpm packages, built in CI with:  VERSION=x.y.z nfpm pkg -p deb|rpm -f packaging/nfpm.yaml
+name: scrap
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: editors
+priority: optional
+maintainer: plaintextlab <plaintextlab@gmail.com>
+description: |
+  Plain markdown notes in a folder, synced with git.
+  Folders, wiki links, instant search, a restorable trash and images, in one
+  small native app.
+vendor: plaintextlab
+homepage: https://github.com/plaintextlab/scrap
+license: MIT
+
+contents:
+  - src: target/release/scrap
+    dst: /usr/bin/scrap
+    file_info:
+      mode: 0755
+  - src: packaging/linux/dev.plaintextlab.Scrap.desktop
+    dst: /usr/share/applications/dev.plaintextlab.Scrap.desktop
+  - src: packaging/linux/dev.plaintextlab.Scrap.metainfo.xml
+    dst: /usr/share/metainfo/dev.plaintextlab.Scrap.metainfo.xml
+  - src: packaging/icons/scrap.png
+    dst: /usr/share/icons/hicolor/512x512/apps/dev.plaintextlab.Scrap.png
+  - src: LICENSE
+    dst: /usr/share/doc/scrap/LICENSE
+
+# The window system libraries are loaded at runtime, so they're declared here.
+overrides:
+  deb:
+    depends: [libc6, libgl1, libegl1, libxkbcommon0]
+    recommends: [git]
+  rpm:
+    depends: [glibc, libglvnd-glx, libglvnd-egl, libxkbcommon]
+    recommends: [git]

@@ -12,6 +12,7 @@ mod search;
 mod sidebar;
 mod theme;
 mod time;
+mod update;
 mod widgets;
 
 use scrap_core::vault;

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Scrap
+GenericName=Notes
+Comment=Plain markdown notes in a folder, synced with git
+Exec=scrap %f
+Icon=dev.plaintextlab.Scrap
+Terminal=false
+Categories=Office;Utility;TextEditor;
+Keywords=notes;markdown;wiki;obsidian;git;
+StartupWMClass=dev.plaintextlab.Scrap

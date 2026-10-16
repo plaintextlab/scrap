@@ -18,7 +18,8 @@ The desktop and Android apps share the same core and the same features:
 - **`[[Wiki links]]`**, including `[[Note|alias]]` and `[[Note#heading]]`. Click in Read mode, or Ctrl/Cmd+click in the editor. Linking to a note that doesn't exist creates it. **Backlinks and outgoing links** panel.
 - **Renaming a note updates links** to it across the vault; **moving one keeps its image links working**.
 - **Trash**: deleted notes and folders can be restored to where they were (with Undo right after deleting), deleted forever, or emptied.
-- **[Gruvbox](https://github.com/morhetz/gruvbox) dark and light themes** (or follow the system) with a one-click toggle, colour-coded icons, adjustable text size, notes open in Edit, Read or the last used view.
+- **Themes:** Gruvbox (default), Everforest, Nord, Catppuccin, Solarized and Tokyo Night, each in light and dark (or following the system) with a one-click toggle. Icons are colour-coded and the app icon follows the theme. Adjustable text size; notes open in Edit, Read or the last used view.
+- **Updates itself** on Windows, macOS and Linux (AppImage; .deb/.rpm open in your installer): it checks for a new release at startup (can be turned off in Settings) and installs it with one click.
 - **Autosave**, back/forward history, word and character counts.
 - **Git sync**: commit, pull and push in one click, automatically on a timer, when the vault opens and when the app closes. If the same note changed on two devices, **both versions are kept** (`Note (conflict).md`) instead of leaving conflict markers.
 
@@ -67,17 +68,26 @@ Run `scrap <folder>` to open a specific folder. `SCRAP_CONFIG_DIR` keeps setting
 
 ## Download
 
-Prebuilt binaries for Windows, macOS (Apple Silicon and Intel) and Linux are on the [Releases page](https://github.com/plaintextlab/scrap/releases). Every push to `main` is tested and published automatically as a new release (`v<major>.<minor>.<build>`; bump major/minor in `Cargo.toml`).
+Get the latest version from the [Releases page](https://github.com/plaintextlab/scrap/releases):
+
+| System | Download |
+| --- | --- |
+| Windows (x64) | `scrap-v…-windows-x64.exe`, a single program; run it from anywhere |
+| macOS (Apple Silicon and Intel) | `scrap-v…-macos-universal.dmg`; drag Scrap to Applications |
+| Linux (x86_64) | `.AppImage`, `.deb`, `.rpm` or `.flatpak` |
+| Android | `scrap-v…-android-arm64.apk` |
+
+Every push to `main` is tested and published automatically as a new release (`v<major>.<minor>.<build>`; bump major/minor in `Cargo.toml`). The desktop app checks for new releases and updates itself; a Flatpak updates through your software center.
 
 **Android:** each release also has an `android-arm64.apk`: a native Material 3 app (Jetpack Compose) on the same Rust core, with:
 
 - GitHub sync over HTTPS with a personal access token (stored encrypted with the Android Keystore). Syncs on open, when you leave the app, on pull-to-refresh and optionally hourly in the background.
-- Settings: Gruvbox theme (system/light/dark, plus a toggle in the top bar), the app name shown in the launcher (Scrap, Notes, Notebook, Journal, Wiki, Vault or Memo), text size, open notes in edit or read mode.
+- Settings: theme (Gruvbox, Everforest, Nord, Catppuccin, Solarized, Tokyo Night; system/light/dark, plus a toggle in the top bar), with a matching launcher icon; the app name shown in the launcher (Scrap, Notes, Notebook, Journal, Wiki, Vault or Memo); text size; open notes in edit or read mode.
 - The formatting toolbar sits above the keyboard, images can come from the camera, and you can "Share to Scrap" from other apps.
 
-Notes live in `Android/data/dev.plaintextlab.scrap/files/vault`. Unless the repo has a signing key configured (`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` secrets, key alias `scrap`), uninstall the previous version before installing a new one.
+Notes live in `Android/data/dev.plaintextlab.scrap/files/vault`. Every release is signed with the same key (repository secrets `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD`, a PKCS#12 keystore with key alias `scrap`), so a new APK installs over the old one and keeps your notes and settings. Releases fail rather than ship an APK signed with any other key.
 
-The macOS build is unsigned: on first launch, right-click → Open (or run `xattr -d com.apple.quarantine scrap`).
+The macOS app isn't notarized: on first launch, right-click Scrap → Open (or run `xattr -dr com.apple.quarantine /Applications/Scrap.app`). Updates installed from within the app don't need this again.
 
 ## Building
 

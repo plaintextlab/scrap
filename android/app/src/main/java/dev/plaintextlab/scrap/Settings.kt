@@ -14,6 +14,16 @@ import javax.crypto.spec.GCMParameterSpec
 
 enum class ThemeMode { System, Light, Dark }
 
+/** Colour themes, each with a light and a dark palette (see ui/Theme.kt). */
+enum class ThemeName(val label: String, val id: String) {
+    Gruvbox("Gruvbox", "gruvbox"),
+    Everforest("Everforest", "everforest"),
+    Nord("Nord", "nord"),
+    Catppuccin("Catppuccin", "catppuccin"),
+    Solarized("Solarized", "solarized"),
+    TokyoNight("Tokyo Night", "tokyonight"),
+}
+
 enum class SortOrder { Name, Recent }
 
 data class SyncSettings(
@@ -33,6 +43,7 @@ data class SyncSettings(
 
 data class AppSettings(
     val theme: ThemeMode = ThemeMode.System,
+    val colorTheme: ThemeName = ThemeName.Gruvbox,
     /** Multiplier for note text (editor and reader). */
     val textScale: Float = 1f,
     val openInEdit: Boolean = false,
@@ -75,6 +86,7 @@ class SettingsStore(context: Context) {
         val repo = activeRepo()
         AppSettings(
             theme = enumOr(getString("theme", null), ThemeMode.System),
+            colorTheme = enumOr(getString("colorTheme", null), ThemeName.Gruvbox),
             textScale = getFloat("textScale", 1f),
             openInEdit = getBoolean("openInEdit", false),
             sort = enumOr(getString("sort", null), SortOrder.Name),
@@ -94,6 +106,7 @@ class SettingsStore(context: Context) {
     fun save(s: AppSettings) {
         prefs.edit()
             .putString("theme", s.theme.name)
+            .putString("colorTheme", s.colorTheme.name)
             .putFloat("textScale", s.textScale)
             .putBoolean("openInEdit", s.openInEdit)
             .putString("sort", s.sort.name)

@@ -1,7 +1,11 @@
 name: release
 
-# Every push is tested and built for all platforms; pushes to main are also
-# published as a GitHub Release.
+# Every push is tested and packaged; pushes to main are also published as a GitHub
+# Release with exactly these downloads:
+#   Linux:   .flatpak, .AppImage, .deb, .rpm (x86_64)
+#   Windows: .exe (x64)
+#   macOS:   .dmg (universal: Apple Silicon and Intel)
+#   Android: .apk (arm64)
 # Version: <major>.<minor> from Cargo.toml + the workflow run number (e.g. v0.1.42).
 # Bump major/minor in Cargo.toml when you want a new series.
 
@@ -27,52 +31,151 @@ jobs:
           base=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2 | cut -d. -f1,2)
           echo "version=${base}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
-  build:
+  linux:
     needs: version
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: windows-latest, target: x86_64-pc-windows-msvc, test: true }
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, test: true }
-          - { os: macos-latest, target: aarch64-apple-darwin, test: true }
-          - { os: macos-latest, target: x86_64-apple-darwin, test: false }
-    runs-on: ${{ matrix.os }}
+    # The oldest supported Ubuntu, so the binary runs on older glibc too.
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      # Built into the desktop app, which compares it with the latest release to update itself.
+      SCRAP_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: linux
+      - name: Dependencies
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev pkg-config desktop-file-utils
+      - name: Test
+        run: |
+          git config --global user.name ci
+          git config --global user.email ci@example.com
+          cargo test --workspace
+      - name: Build
+        run: cargo build --release
+      - name: deb and rpm
+        run: |
+          curl -sSL https://github.com/goreleaser/nfpm/releases/download/v2.43.0/nfpm_2.43.0_Linux_x86_64.tar.gz | tar xz nfpm
+          mkdir -p dist
+          ./nfpm pkg -p deb -f packaging/nfpm.yaml -t "dist/scrap-v$VERSION-amd64.deb"
+          ./nfpm pkg -p rpm -f packaging/nfpm.yaml -t "dist/scrap-v$VERSION-x86_64.rpm"
+      - name: AppImage
+        run: |
+          desktop-file-validate packaging/linux/dev.plaintextlab.Scrap.desktop
+          curl -sSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          A=AppDir
+          install -Dm755 target/release/scrap $A/usr/bin/scrap
+          install -Dm644 packaging/linux/dev.plaintextlab.Scrap.desktop $A/usr/share/applications/dev.plaintextlab.Scrap.desktop
+          install -Dm644 packaging/icons/scrap.png $A/usr/share/icons/hicolor/512x512/apps/dev.plaintextlab.Scrap.png
+          cp packaging/linux/dev.plaintextlab.Scrap.desktop $A/
+          cp packaging/icons/scrap.png $A/dev.plaintextlab.Scrap.png
+          ln -s usr/bin/scrap $A/AppRun
+          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool --no-appstream $A "dist/scrap-v$VERSION-x86_64.AppImage"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*
+      # The plain binary, packaged into the Flatpak by the next job.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-binary
+          path: target/release/scrap
+
+  flatpak:
+    needs: [version, linux]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-24.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-binary
+          path: packaging/flatpak
+      - run: chmod +x packaging/flatpak/scrap
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: packaging/flatpak/dev.plaintextlab.Scrap.yml
+          bundle: scrap-v${{ needs.version.outputs.version }}-x86_64.flatpak
+          cache-key: flatpak-builder-${{ github.sha }}
+          upload-artifact: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: scrap-v${{ needs.version.outputs.version }}-x86_64.flatpak
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    env:
+      SCRAP_VERSION: ${{ needs.version.outputs.version }}
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
-      - name: Linux dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev pkg-config
+          key: windows
       - name: Test
-        if: matrix.test
         run: |
           git config --global user.name ci
           git config --global user.email ci@example.com
-          cargo test --workspace --target ${{ matrix.target }}
+          cargo test --workspace
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release
       - name: Package
         run: |
-          name=scrap-v${{ needs.version.outputs.version }}-${{ matrix.target }}
           mkdir -p dist
-          cd target/${{ matrix.target }}/release
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            7z a "$GITHUB_WORKSPACE/dist/$name.zip" scrap.exe
-          else
-            tar czf "$GITHUB_WORKSPACE/dist/$name.tar.gz" scrap
-          fi
+          cp target/release/scrap.exe "dist/scrap-v${{ needs.version.outputs.version }}-windows-x64.exe"
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.target }}
+          name: windows
+          path: dist/*
+
+  macos:
+    needs: version
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      # Built into the desktop app, which compares it with the latest release to update itself.
+      SCRAP_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: macos
+      - name: Test
+        run: |
+          git config --global user.name ci
+          git config --global user.email ci@example.com
+          cargo test --workspace
+      - name: Build (Apple Silicon and Intel)
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+      - name: dmg
+        run: |
+          app=dmg/Scrap.app/Contents
+          mkdir -p $app/MacOS $app/Resources dist
+          lipo -create -output $app/MacOS/scrap \
+            target/aarch64-apple-darwin/release/scrap target/x86_64-apple-darwin/release/scrap
+          cp packaging/icons/scrap.icns $app/Resources/scrap.icns
+          sed "s/VERSION/$VERSION/g" packaging/macos/Info.plist > $app/Info.plist
+          # Ad-hoc signature: not notarized, but lets Apple Silicon run it.
+          codesign --force --deep --sign - dmg/Scrap.app
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname Scrap -srcfolder dmg -ov -format UDZO "dist/scrap-v$VERSION-macos-universal.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
           path: dist/*
 
   android:
@@ -101,24 +204,39 @@ jobs:
         with:
           gradle-version: "8.11.1"
       - name: Signing key
-        # Set ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD repo secrets (key alias "scrap")
-        # to sign every release with the same key, so updates install in place. Without them
-        # the APK is signed with a throwaway debug key and must be reinstalled on each release.
+        # Every release must be signed with the same key (repo secrets ANDROID_KEYSTORE_BASE64
+        # and ANDROID_KEYSTORE_PASSWORD, a PKCS#12 keystore with key alias "scrap"); otherwise
+        # Android refuses to install the update over the existing app. Branch builds without
+        # the secrets fall back to a throwaway debug key; releases fail instead.
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          RELEASE: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
         run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
-            echo "SCRAP_KEYSTORE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
-            echo "SCRAP_KEYSTORE_PASSWORD=$KEYSTORE_PASS" >> "$GITHUB_ENV"
+          if [ -z "$KEYSTORE_B64" ]; then
+            if [ "$RELEASE" = "true" ]; then
+              echo "::error::ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD secrets are missing; refusing to release an APK signed with a throwaway key."
+              exit 1
+            fi
+            echo "::warning::No signing key: this APK is signed with a throwaway debug key."
+            exit 0
           fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          keytool -list -keystore "$RUNNER_TEMP/release.keystore" -storetype pkcs12 -storepass "$KEYSTORE_PASS" -alias scrap > /dev/null \
+            || { echo "::error::The signing keystore can't be opened (wrong password, or no key named scrap)."; exit 1; }
+          echo "SCRAP_KEYSTORE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+          echo "SCRAP_KEYSTORE_PASSWORD=$KEYSTORE_PASS" >> "$GITHUB_ENV"
       - name: Build APK
         working-directory: android
         env:
           SCRAP_VERSION: ${{ needs.version.outputs.version }}
           SCRAP_VERSION_CODE: ${{ github.run_number }}
         run: gradle assembleRelease --no-daemon
+      - name: Signing certificate
+        # Must stay the same across releases for updates to install over the old app.
+        run: |
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$apksigner" verify --print-certs android/app/build/outputs/apk/release/app-release.apk | grep -i "SHA-256"
       - name: Package
         run: |
           mkdir -p dist
@@ -129,10 +247,11 @@ jobs:
           path: dist/*
 
   release:
-    needs: [version, build, android]
-    # Publish desktop builds even if the Android build fails.
+    needs: [version, linux, flatpak, windows, macos, android]
+    # Desktop builds are required; a failed Flatpak or Android build doesn't block the rest.
     if: >-
-      always() && needs.build.result == 'success' &&
+      always() && needs.linux.result == 'success' && needs.windows.result == 'success' &&
+      needs.macos.result == 'success' &&
       github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -142,6 +261,8 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # The bare Linux binary was only for the Flatpak job.
+      - run: rm -f dist/scrap && ls -la dist
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.version.outputs.version }}

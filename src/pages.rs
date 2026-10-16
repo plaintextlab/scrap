@@ -187,7 +187,20 @@ impl App {
 
                     section(ui, "Appearance");
                     widgets::card(ui, |ui| {
-                        setting_row(ui, "Theme", "", |ui| {
+                        ui.label("Theme");
+                        ui.add_space(8.0);
+                        let dark = ui.ctx().theme() == egui::Theme::Dark;
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing = egui::vec2(10.0, 10.0);
+                            for t in theme::ThemeName::ALL {
+                                if theme_swatch(ui, t, t == self.s.color_theme, dark).clicked() {
+                                    self.s.color_theme = t;
+                                    theme::apply(ui.ctx(), t);
+                                }
+                            }
+                        });
+                        ui.add_space(12.0);
+                        setting_row(ui, "Mode", "Light or dark version of the theme.", |ui| {
                             let mut theme = self.s.theme;
                             let options = [
                                 (ThemeChoice::System, icon::DESKTOP, "System"),
@@ -228,13 +241,71 @@ impl App {
                     section(ui, "Sync");
                     widgets::card(ui, |ui| self.sync_settings(ui));
 
+                    section(ui, "Updates");
+                    widgets::card(ui, |ui| self.update_settings(ui));
+
                     section(ui, "Keyboard shortcuts");
                     widgets::card(ui, shortcuts);
                     ui.add_space(12.0);
-                    ui.label(RichText::new(format!("Scrap {}", env!("CARGO_PKG_VERSION"))).size(12.0).color(p.faint));
+                    ui.label(RichText::new(format!("Scrap {}", crate::update::current_version().unwrap_or("(development build)"))).size(12.0).color(p.faint));
                 });
             });
         });
+    }
+
+    fn update_settings(&mut self, ui: &mut Ui) {
+        use crate::update::State;
+        let p = theme::palette(ui.ctx());
+        let Some(version) = crate::update::current_version() else {
+            ui.label(RichText::new("This is a development build, so it doesn't update itself.").color(p.muted));
+            return;
+        };
+        widgets::switch(ui, &mut self.s.check_updates, "Check for updates automatically", "Looks for a new release when Scrap starts.");
+        ui.add_space(10.0);
+        let (status, failed) = match &self.updater.state {
+            State::Idle => ("Not checked yet.".to_string(), false),
+            State::Checking => ("Checking for updates…".to_string(), false),
+            State::UpToDate => ("You're on the latest version.".to_string(), false),
+            State::Available(r) => match r.manual_reason() {
+                None => (format!("Version {} is available.", r.version), false),
+                Some(why) => (format!("Version {} is available. {why}", r.version), false),
+            },
+            State::Installing(v) => (format!("Downloading and installing {v}…"), false),
+            State::Ready(r) => (format!("Version {} is installed. Restart Scrap to start using it.", r.version), false),
+            State::Handoff(message) => (message.clone(), false),
+            State::Failed(message) => (message.clone(), true),
+        };
+        let label = format!("Scrap {version}");
+        let help = if failed { format!("{} {status}", icon::WARNING_CIRCLE) } else { status };
+        let mut actions = Vec::new();
+        setting_row(ui, &label, &help, |ui| match &self.updater.state {
+            State::Checking | State::Installing(_) => {
+                ui.spinner();
+            }
+            State::Available(r) => {
+                if r.installable() {
+                    if widgets::button(ui, Kind::Primary, icon::DOWNLOAD_SIMPLE, "Update now").clicked() {
+                        actions.push(Action::InstallUpdate);
+                    }
+                } else if widgets::button(ui, Kind::Primary, icon::ARROW_SQUARE_OUT, "Download").clicked() {
+                    ui.ctx().open_url(egui::OpenUrl::new_tab(&r.page));
+                }
+                if widgets::button(ui, Kind::Ghost, "", "What's new").clicked() {
+                    ui.ctx().open_url(egui::OpenUrl::new_tab(&r.page));
+                }
+            }
+            State::Ready(_) => {
+                if widgets::button(ui, Kind::Primary, icon::ARROW_CLOCKWISE, "Restart now").clicked() {
+                    actions.push(Action::RestartForUpdate);
+                }
+            }
+            _ => {
+                if widgets::button(ui, Kind::Secondary, icon::ARROWS_CLOCKWISE, "Check now").clicked() {
+                    actions.push(Action::CheckUpdates);
+                }
+            }
+        });
+        self.actions.extend(actions);
     }
 
     /// Every vault in the switcher, with the current one marked; switch, remove or add.
@@ -474,4 +545,35 @@ fn shortcuts(ui: &mut Ui) {
             ui.end_row();
         }
     });
+}
+
+/// A clickable preview of a colour theme in the current light/dark mode.
+fn theme_swatch(ui: &mut Ui, t: theme::ThemeName, selected: bool, dark: bool) -> egui::Response {
+    let pal = t.palette(dark);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(124.0, 70.0), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        let radius = egui::CornerRadius::same(10);
+        painter.rect_filled(rect, radius, pal.bg);
+        // The sidebar colour down the left edge.
+        let strip = egui::Rect::from_min_max(rect.min, egui::pos2(rect.left() + 18.0, rect.bottom()));
+        painter.rect_filled(strip, egui::CornerRadius { nw: 10, sw: 10, ne: 0, se: 0 }, pal.panel);
+        for (i, color) in [pal.accent, pal.red, pal.green, pal.blue, pal.purple].into_iter().enumerate() {
+            painter.circle_filled(egui::pos2(rect.left() + 32.0 + i as f32 * 15.0, rect.top() + 22.0), 5.5, color);
+        }
+        painter.text(
+            egui::pos2(rect.left() + 27.0, rect.bottom() - 18.0),
+            egui::Align2::LEFT_CENTER,
+            t.label(),
+            egui::FontId::new(13.5, theme::semibold()),
+            pal.text,
+        );
+        let stroke = if selected {
+            egui::Stroke::new(2.0, theme::palette(ui.ctx()).accent)
+        } else {
+            egui::Stroke::new(1.0, pal.border)
+        };
+        painter.rect_stroke(rect, radius, stroke, egui::StrokeKind::Inside);
+    }
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }

@@ -62,8 +62,8 @@ import kotlinx.coroutines.delay
 @Composable
 fun Editor(text: String, onChange: (String) -> Unit, padding: PaddingValues, onAddImage: suspend (Uri) -> String?) {
     val colors = MaterialTheme.colorScheme
-    val gruvbox = LocalGruvbox.current
-    val highlight = remember(colors, gruvbox) { MarkdownHighlight(colors, gruvbox) }
+    val accents = LocalAccents.current
+    val highlight = remember(colors, accents) { MarkdownHighlight(colors, accents) }
     val focus = remember { FocusRequester() }
     val history = remember { EditHistory() }
     var value by remember { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }

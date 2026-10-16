@@ -16,7 +16,7 @@ import androidx.compose.ui.unit.em
 /**
  * Styles markdown in the editor without changing the text, so cursor positions map 1:1.
  */
-class MarkdownHighlight(private val c: ColorScheme, private val g: GruvboxColors) : VisualTransformation {
+class MarkdownHighlight(private val c: ColorScheme, private val g: AccentColors) : VisualTransformation {
 
     override fun filter(text: AnnotatedString): TransformedText =
         TransformedText(highlight(text.text), OffsetMapping.Identity)

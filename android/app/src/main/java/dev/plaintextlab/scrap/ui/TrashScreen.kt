@@ -76,7 +76,7 @@ fun TrashScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                                 DropdownMenuItem(
                                     text = { Text("Empty trash") },
-                                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = LocalGruvbox.current.red) },
+                                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = LocalAccents.current.red) },
                                     onClick = {
                                         menu = false
                                         emptying = true
@@ -166,7 +166,7 @@ private fun TrashRow(item: TrashItem, onRestore: () -> Unit, onPurge: () -> Unit
         leadingContent = { Icon(
             if (item.isDir) ScrapIcons.Folder else ScrapIcons.Note,
             contentDescription = null,
-            tint = if (item.isDir) LocalGruvbox.current.yellow else LocalGruvbox.current.blue,
+            tint = if (item.isDir) LocalAccents.current.yellow else LocalAccents.current.blue,
         ) },
         trailingContent = {
             Box {
@@ -184,7 +184,7 @@ private fun TrashRow(item: TrashItem, onRestore: () -> Unit, onPurge: () -> Unit
                     )
                     DropdownMenuItem(
                         text = { Text("Delete forever") },
-                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = LocalGruvbox.current.red) },
+                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = LocalAccents.current.red) },
                         onClick = {
                             menu = false
                             onPurge()
@@ -204,7 +204,7 @@ private fun displayName(item: TrashItem): String =
 private fun ConfirmPermanent(title: String, text: String, action: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = LocalGruvbox.current.red) },
+        icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = LocalAccents.current.red) },
         title = { Text(title) },
         text = { Text(text) },
         confirmButton = {
