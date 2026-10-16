@@ -218,6 +218,12 @@ export!(Java_dev_plaintextlab_scrap_Core_sync(config) {
     }
     #[cfg(target_os = "android")]
     tls::init()?;
+    // A repository other than the open one (e.g. the one just switched away from) is
+    // synced in its own folder without touching the open vault.
+    let other = field("root");
+    if !other.is_empty() {
+        return sync::sync(std::path::Path::new(&other), &cfg);
+    }
     // The network part can take seconds; don't hold the vault lock (and block search,
     // saving and browsing) while it runs. Sync only touches files on disk.
     let _disk = DISK.lock().map_err(|_| "disk lock poisoned".to_string())?;

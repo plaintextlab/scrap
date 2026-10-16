@@ -222,21 +222,8 @@ impl App {
                         widgets::switch(ui, &mut self.s.show_links, "Links panel", "Backlinks and links of the open note, on the right.");
                     });
 
-                    section(ui, "Vault");
-                    widgets::card(ui, |ui| {
-                        if let Some(v) = &self.vault {
-                            ui.label(RichText::new(v.root.display().to_string()).color(p.muted));
-                            ui.add_space(10.0);
-                        }
-                        ui.horizontal(|ui| {
-                            if widgets::button(ui, Kind::Secondary, icon::FOLDER_OPEN, "Open another folder…").clicked() {
-                                self.actions.push(Action::OpenVault);
-                            }
-                            if widgets::button(ui, Kind::Ghost, icon::ARROW_SQUARE_OUT, "Show in file manager").clicked() {
-                                self.actions.push(Action::Reveal(String::new()));
-                            }
-                        });
-                    });
+                    section(ui, "Repositories");
+                    widgets::card(ui, |ui| self.repos_settings(ui));
 
                     section(ui, "Sync");
                     widgets::card(ui, |ui| self.sync_settings(ui));
@@ -247,6 +234,53 @@ impl App {
                     ui.label(RichText::new(format!("Scrap {}", env!("CARGO_PKG_VERSION"))).size(12.0).color(p.faint));
                 });
             });
+        });
+    }
+
+    /// Every vault in the switcher, with the current one marked; switch, remove or add.
+    fn repos_settings(&mut self, ui: &mut Ui) {
+        let p = theme::palette(ui.ctx());
+        ui.label(
+            RichText::new("Each repository is its own folder of notes with its own git remote. Switch between them here or from the vault menu at the top of the sidebar.")
+                .size(12.5)
+                .color(p.muted),
+        );
+        ui.add_space(10.0);
+        let current = self.vault.as_ref().map(|v| v.root.clone());
+        for repo in self.s.repos.clone() {
+            let is_current = current.as_ref() == Some(&repo.path);
+            let remote = if repo.url.is_empty() { "No git remote".to_string() } else { repo.url.clone() };
+            let help = format!("{remote}\n{}", repo.path.display());
+            ui.horizontal(|ui| {
+                let glyph = if repo.url.is_empty() { icon::FOLDER_SIMPLE } else { icon::GIT_BRANCH };
+                let color = if is_current { p.aqua } else { p.yellow };
+                ui.label(RichText::new(glyph).size(18.0).color(color));
+                setting_row(ui, &repo.name(), &help, |ui| {
+                    if is_current {
+                        ui.label(RichText::new(format!("{}  Current", icon::CHECK)).color(p.green));
+                    } else {
+                        if widgets::icon_button(ui, icon::X, "Remove from the list (the folder stays on disk)").clicked() {
+                            self.actions.push(Action::RemoveRepo(repo.path.clone()));
+                        }
+                        if widgets::button(ui, Kind::Secondary, icon::ARROWS_LEFT_RIGHT, "Switch").clicked() {
+                            self.actions.push(Action::SwitchRepo(repo.path.clone()));
+                        }
+                    }
+                });
+            });
+            ui.add_space(8.0);
+        }
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            if widgets::button(ui, Kind::Secondary, icon::DOWNLOAD_SIMPLE, "Add from git…").clicked() {
+                self.actions.push(Action::CloneVault);
+            }
+            if widgets::button(ui, Kind::Secondary, icon::FOLDER_OPEN, "Add a folder…").clicked() {
+                self.actions.push(Action::OpenVault);
+            }
+            if widgets::button(ui, Kind::Ghost, icon::ARROW_SQUARE_OUT, "Show in file manager").clicked() {
+                self.actions.push(Action::Reveal(String::new()));
+            }
         });
     }
 

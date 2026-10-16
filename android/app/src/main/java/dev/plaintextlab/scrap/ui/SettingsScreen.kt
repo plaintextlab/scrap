@@ -36,6 +36,10 @@ import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import dev.plaintextlab.scrap.Repo
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -68,6 +72,7 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
     val uri = LocalUriHandler.current
     val gruvbox = LocalGruvbox.current
     var pickingName by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf<Repo?>(null) }
     val version = remember(context) {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
     }
@@ -150,7 +155,7 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
             if (s.sync.configured) {
                 item {
                     ListItem(
-                        headlineContent = { Text(repoLabel(s.sync.url)) },
+                        headlineContent = { Text(vm.activeRepo.label) },
                         supportingContent = { SyncStatusText(vm.syncStatus) },
                         leadingContent = { Icon(ScrapIcons.Sync, contentDescription = null, tint = gruvbox.aqua) },
                         trailingContent = {
@@ -181,7 +186,7 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                         headlineContent = { Text("Connection") },
                         supportingContent = { Text("Repository, token, branch and commit author") },
                         trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
-                        modifier = Modifier.clickable { vm.navigate(Screen.SyncSetup) },
+                        modifier = Modifier.clickable { vm.navigate(Screen.SyncSetup()) },
                     )
                 }
             } else {
@@ -191,9 +196,55 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                         supportingContent = { Text("Back up your notes and sync them with your other devices") },
                         leadingContent = { Icon(ScrapIcons.Sync, contentDescription = null, tint = gruvbox.aqua) },
                         trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
-                        modifier = Modifier.clickable { vm.navigate(Screen.SyncSetup) },
+                        modifier = Modifier.clickable { vm.navigate(Screen.SyncSetup()) },
                     )
                 }
+            }
+
+            item { SectionTitle("Repositories") }
+            item {
+                Text(
+                    "Each repository is its own set of notes in its own folder. Tap one to switch to it.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
+            items(vm.repos, key = { "repo:" + it.id }) { repo ->
+                val open = repo.id == vm.activeRepoId
+                ListItem(
+                    headlineContent = { Text(repo.label) },
+                    supportingContent = {
+                        Text(
+                            when {
+                                repo.url.isBlank() -> "Not connected to GitHub"
+                                else -> repoLabel(repo.url)
+                            },
+                        )
+                    },
+                    leadingContent = {
+                        Icon(ScrapIcons.Folder, contentDescription = null, tint = if (open) gruvbox.aqua else gruvbox.yellow)
+                    },
+                    trailingContent = {
+                        if (open) {
+                            Text("Open", color = gruvbox.green, style = MaterialTheme.typography.labelLarge)
+                        } else {
+                            IconButton(onClick = { removing = repo }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Remove ${repo.label}", tint = gruvbox.red)
+                            }
+                        }
+                    },
+                    modifier = Modifier.clickable(enabled = !open) { vm.switchRepo(repo.id) },
+                )
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text("Add repository") },
+                    supportingContent = { Text("Sync another GitHub repository as a separate set of notes") },
+                    leadingContent = { Icon(Icons.Default.Add, contentDescription = null, tint = gruvbox.aqua) },
+                    trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
+                    modifier = Modifier.clickable { vm.navigate(Screen.SyncSetup(adding = true)) },
+                )
             }
 
             item { SectionTitle("About") }
@@ -212,6 +263,27 @@ fun SettingsScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                 )
             }
         }
+    }
+
+    removing?.let { repo ->
+        AlertDialog(
+            onDismissRequest = { removing = null },
+            icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = gruvbox.red) },
+            title = { Text("Remove “${repo.label}”?") },
+            text = {
+                Text(
+                    "Its notes are deleted from this phone. What's already on GitHub stays there, but " +
+                        "changes that haven't synced yet are lost.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    removing = null
+                    vm.removeRepo(repo.id)
+                }) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } },
+        )
     }
 
     if (pickingName) {

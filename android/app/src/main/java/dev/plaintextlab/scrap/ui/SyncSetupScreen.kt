@@ -43,6 +43,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import dev.plaintextlab.scrap.Repo
 import dev.plaintextlab.scrap.SyncSettings
 import dev.plaintextlab.scrap.VaultViewModel
 import dev.plaintextlab.scrap.normalizeRepoUrl
@@ -51,9 +52,11 @@ private const val NEW_TOKEN_URL = "https://github.com/settings/personal-access-t
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SyncSetupScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
-    val current = vm.settings.sync
+fun SyncSetupScreen(vm: VaultViewModel, snackbar: SnackbarHostState, adding: Boolean) {
+    val current = if (adding) SyncSettings() else vm.settings.sync
+    val hasToken = !adding && current.hasToken
     val uri = LocalUriHandler.current
+    var label by rememberSaveable { mutableStateOf(if (adding) "" else vm.activeRepo.name) }
     var url by rememberSaveable { mutableStateOf(current.url) }
     var username by rememberSaveable { mutableStateOf(current.username) }
     var token by rememberSaveable { mutableStateOf("") }
@@ -65,12 +68,12 @@ fun SyncSetupScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
 
     val repo = normalizeRepoUrl(url)
     val urlError = url.isNotBlank() && repo == null
-    val canSave = repo != null && (token.isNotBlank() || current.hasToken) && !vm.syncing
+    val canSave = repo != null && (token.isNotBlank() || hasToken) && !vm.syncing
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("GitHub sync") },
+                title = { Text(if (adding) "Add repository" else "GitHub sync") },
                 navigationIcon = {
                     IconButton(onClick = { vm.back() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -92,8 +95,14 @@ fun SyncSetupScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                "Your notes are synced with a GitHub repository over HTTPS. Use a private repository and a " +
-                    "fine-grained personal access token with read and write access to its contents.",
+                if (adding) {
+                    "Each repository is its own set of notes, kept in its own folder on this phone. " +
+                        "Its notes are downloaded once it's added; switch between repositories from the " +
+                        "title on the notes screen or in Settings."
+                } else {
+                    "Your notes are synced with a GitHub repository over HTTPS. Use a private repository and a " +
+                        "fine-grained personal access token with read and write access to its contents."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -111,6 +120,14 @@ fun SyncSetupScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
+                value = label,
+                onValueChange = { label = it },
+                label = { Text("Name (optional)") },
+                placeholder = { Text(repo?.let { Repo.repoName(it) }?.ifBlank { null } ?: "Shown in the repository switcher") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
                 value = username,
                 onValueChange = { username = it },
                 label = { Text("GitHub username") },
@@ -122,7 +139,7 @@ fun SyncSetupScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
                 value = token,
                 onValueChange = { token = it },
                 label = { Text("Personal access token") },
-                placeholder = { if (current.hasToken) Text("Saved — leave empty to keep it") },
+                placeholder = { if (hasToken) Text("Saved — leave empty to keep it") },
                 singleLine = true,
                 visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
@@ -168,7 +185,7 @@ fun SyncSetupScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
 
             if (vm.syncing) LinearProgressIndicator(Modifier.fillMaxWidth())
             val status = vm.syncStatus
-            if (status != null && current.url.isNotBlank()) {
+            if (!adding && status != null && current.url.isNotBlank()) {
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = if (status.failed) {
@@ -187,26 +204,26 @@ fun SyncSetupScreen(vm: VaultViewModel, snackbar: SnackbarHostState) {
             }
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (current.configured) {
+                if (!adding && current.configured) {
                     OutlinedButton(onClick = { confirmDisconnect = true }) { Text("Disconnect") }
                 }
                 Spacer(Modifier.weight(1f))
                 Button(
                     enabled = canSave,
                     onClick = {
-                        vm.connect(
-                            current.copy(
-                                url = repo!!,
-                                username = username.trim(),
-                                branch = branch.trim().ifEmpty { "main" },
-                                authorName = name.trim(),
-                                authorEmail = email.trim(),
-                            ),
-                            token,
+                        val details = Repo(
+                            id = "",
+                            name = label.trim(),
+                            url = repo!!,
+                            username = username.trim(),
+                            branch = branch.trim().ifEmpty { "main" },
+                            authorName = name.trim(),
+                            authorEmail = email.trim(),
                         )
+                        if (adding) vm.addRepo(details, token) else vm.connect(details, token)
                         token = ""
                     },
-                ) { Text("Save and sync") }
+                ) { Text(if (adding) "Add and sync" else "Save and sync") }
             }
         }
     }

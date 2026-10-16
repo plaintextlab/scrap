@@ -26,6 +26,13 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
     var settings by mutableStateOf(store.load())
         private set
 
+    /** All repositories (each its own folder of notes) and which one is open. */
+    var repos by mutableStateOf(store.repos())
+        private set
+    var activeRepoId by mutableStateOf(store.activeRepoId())
+        private set
+    val activeRepo: Repo get() = repos.firstOrNull { it.id == activeRepoId } ?: repos.first()
+
     /** Name under the launcher icon (see [LauncherName]). */
     var appName by mutableStateOf(LauncherName.current(app))
         private set
@@ -140,6 +147,7 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
     fun updateSettings(change: (AppSettings) -> AppSettings) {
         settings = change(settings)
         store.save(settings)
+        repos = store.repos()
         Sync.schedulePeriodic(app, settings.sync.configured && settings.sync.background)
     }
 
@@ -155,12 +163,15 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
         message = "The launcher will show “$name” in a moment"
     }
 
-    /** Saves the connection details and runs a first sync; returns to Settings on success. */
-    fun connect(sync: SyncSettings, token: String?) {
+    /** Saves the open repository's connection and runs a sync; returns to Settings on success. */
+    fun connect(repo: Repo, token: String?) {
         if (!token.isNullOrBlank()) store.setToken(token.trim())
-        updateSettings { it.copy(sync = sync.copy(hasToken = store.token() != null)) }
+        store.saveRepo(repo.copy(id = activeRepoId))
+        settings = store.load()
+        repos = store.repos()
+        Sync.schedulePeriodic(app, settings.sync.configured && settings.sync.background)
         launch {
-            if (sync(quiet = false) && screen == Screen.SyncSetup) back()
+            if (sync(quiet = false) && screen is Screen.SyncSetup) back()
         }
     }
 
@@ -168,8 +179,95 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
         store.setToken(null)
         store.clearSyncStatus()
         syncStatus = null
-        updateSettings { it.copy(sync = SyncSettings()) }
+        updateSettings { it.copy(sync = SyncSettings(auto = it.sync.auto, background = it.sync.background)) }
     }
+
+    // ---- Repositories -----------------------------------------------------
+
+    /**
+     * Adds a repository with its own (empty) folder, switches to it and downloads its notes.
+     * Returns to Settings once the first sync succeeded.
+     */
+    fun addRepo(repo: Repo, token: String) {
+        val id = java.util.UUID.randomUUID().toString().take(8)
+        store.saveRepo(repo.copy(id = id))
+        store.setToken(token.trim(), id)
+        repos = store.repos()
+        launch {
+            if (!switchTo(id)) return@launch
+            if (sync(quiet = false)) {
+                stack.removeAll { it is Screen.SyncSetup }
+                if (stack.isEmpty()) stack.add(Screen.Browse(""))
+            }
+        }
+    }
+
+    fun switchRepo(id: String) {
+        launch {
+            if (switchTo(id) && settings.sync.configured && settings.sync.auto) sync(quiet = true)
+        }
+    }
+
+    /**
+     * Opens another repository's folder. Changes in the one being left are synced in the
+     * background so they don't wait until it's opened again.
+     */
+    private suspend fun switchTo(id: String): Boolean {
+        if (id == activeRepoId) return false
+        if (syncing) {
+            message = "Wait for the sync to finish, then switch"
+            return false
+        }
+        flush()
+        val leaving = activeRepo
+        val pushLeaving = unsynced && settings.sync.configured
+        store.setActiveRepo(id)
+        if (pushLeaving) {
+            viewModelScope.launch {
+                try {
+                    Sync.run(app, leaving.id)
+                } catch (e: Exception) {
+                    message = "Couldn't sync ${leaving.label}: ${e.message}"
+                }
+            }
+        }
+        unsynced = false
+        activeRepoId = id
+        settings = store.load()
+        syncStatus = store.lastSync()
+        Sync.schedulePeriodic(app, settings.sync.configured && settings.sync.background)
+        // Nothing from the previous repository stays on screen.
+        saveJob?.cancel()
+        noteRel = null
+        noteLoaded = false
+        noteText = ""
+        savedText = ""
+        editing = false
+        closeSearch()
+        stack.clear()
+        stack.add(Screen.Browse(""))
+        io { Vault.ensureOpen(app) }
+        reload()
+        message = "Switched to ${activeRepo.label}"
+        return true
+    }
+
+    /** Removes a repository that isn't open, deleting its folder on this phone. */
+    fun removeRepo(id: String) {
+        if (id == activeRepoId) return
+        val repo = repos.firstOrNull { it.id == id } ?: return
+        launch {
+            io { Vault.dir(app, id).deleteRecursively() }
+            store.removeRepo(id)
+            repos = store.repos()
+            message = "Removed ${repo.label}"
+        }
+    }
+
+    fun lastSync(id: String): SyncStatus? = store.lastSync(id)
+
+    fun repoConfigured(id: String): Boolean =
+        repos.firstOrNull { it.id == id }?.url?.isNotBlank() == true && store.hasToken(id)
 
     // ---- Sync -------------------------------------------------------------
 

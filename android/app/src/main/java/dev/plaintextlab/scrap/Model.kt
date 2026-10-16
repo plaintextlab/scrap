@@ -18,7 +18,8 @@ sealed interface Screen {
     data class Note(val rel: String) : Screen
     data object Trash : Screen
     data object Settings : Screen
-    data object SyncSetup : Screen
+    /** Connection details of the open repository, or a new one when [adding]. */
+    data class SyncSetup(val adding: Boolean = false) : Screen
 }
 
 /** Accepts "you/notes", "github.com/you/notes" or a full HTTPS URL. Null for SSH URLs. */

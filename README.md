@@ -40,6 +40,7 @@ The desktop app shells out to your installed `git`, so it uses your existing SSH
 
 - **New vault:** open a folder, then go to Settings → Sync → *Set up git* → *Add remote…* (for example a private GitHub repo).
 - **Second machine:** on the welcome screen choose *Clone from git*.
+- **Several repositories:** each repository is its own vault (folder of notes) with its own remote, for example `notes.git` and `work.git`. Add more in Settings → Repositories (*Add from git…* or *Add a folder…*) and switch between them there or from the vault menu at the top of the sidebar. On Android: Settings → Repositories → *Add repository*, and switch from the title on the notes screen. Changes in the repository you leave are synced in the background.
 - **What a sync does:** `git add -A` → commit → `fetch` → merge the remote branch → `push`.
 - **Conflicts:** if the same note was edited on two machines, your version stays where it is and the other one is saved next to it as `Note (conflict).md`. Nothing is lost and you never see conflict markers.
 

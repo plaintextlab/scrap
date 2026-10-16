@@ -34,6 +34,21 @@ impl App {
                 .on_hover_text(v.root.display().to_string());
             Popup::menu(&header).show(|ui| {
                 ui.set_min_width(230.0);
+                if self.s.repos.len() > 1 {
+                    for repo in &self.s.repos {
+                        let current = repo.path == v.root;
+                        let glyph = if current { icon::CHECK } else { icon::ARROWS_LEFT_RIGHT };
+                        let resp = widgets::menu_item(ui, glyph, &repo.name());
+                        let resp = if repo.url.is_empty() { resp } else { resp.on_hover_text(&repo.url) };
+                        if resp.clicked() {
+                            if !current {
+                                actions.push(Action::SwitchRepo(repo.path.clone()));
+                            }
+                            ui.close();
+                        }
+                    }
+                    ui.separator();
+                }
                 if widgets::menu_item(ui, icon::FOLDER_OPEN, "Open another folder…").clicked() {
                     actions.push(Action::OpenVault);
                     ui.close();

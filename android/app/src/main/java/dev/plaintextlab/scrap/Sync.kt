@@ -18,41 +18,59 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-/** The vault folder, opened at most once per process (by the UI or a background worker). */
+/**
+ * The active repository's folder, opened by the Rust core. Shared by the UI and background
+ * workers; switching repositories reopens it.
+ */
 object Vault {
-    @Volatile private var opened = false
+    @Volatile private var openedPath: String? = null
 
-    fun dir(context: Context): File = File(context.getExternalFilesDir(null) ?: context.filesDir, "vault")
+    private fun base(context: Context): File = context.getExternalFilesDir(null) ?: context.filesDir
 
+    /** Folder of a repository: the original keeps `vault`, the others get `vaults/<id>`. */
+    fun dir(context: Context, id: String): File =
+        if (id == Repo.DEFAULT) File(base(context), "vault") else File(base(context), "vaults/$id")
+
+    fun dir(context: Context): File = dir(context, SettingsStore(context).activeRepoId())
+
+    /** Opens the active repository's folder unless it's already the open one. */
     @Synchronized
     fun ensureOpen(context: Context) {
-        if (!opened) {
-            Core.open(dir(context).path)
-            opened = true
+        val path = dir(context).path
+        if (openedPath != path) {
+            Core.open(path)
+            openedPath = path
         }
     }
 }
 
 object Sync {
-    /** Commits, pulls and pushes. Blocks; returns a summary or throws [IOException]. */
-    suspend fun run(context: Context): String = withContext(Dispatchers.IO) {
+    /**
+     * Commits, pulls and pushes a repository (the active one by default). Blocks; returns a
+     * summary or throws [IOException].
+     */
+    suspend fun run(context: Context, repoId: String? = null): String = withContext(Dispatchers.IO) {
         val store = SettingsStore(context)
-        val s = store.load().sync
-        val token = store.token()
-        if (s.url.isBlank() || token == null) throw IOException("GitHub sync isn't set up")
-        Vault.ensureOpen(context)
+        val id = repoId ?: store.activeRepoId()
+        val repo = store.repos().firstOrNull { it.id == id } ?: throw IOException("Unknown repository")
+        val token = store.token(id)
+        if (repo.url.isBlank() || token == null) throw IOException("GitHub sync isn't set up")
+        val active = id == store.activeRepoId()
+        if (active) Vault.ensureOpen(context)
         val config = JSONObject()
-            .put("url", s.url)
-            .put("username", s.username)
+            .put("url", repo.url)
+            .put("username", repo.username)
             .put("token", token)
-            .put("branch", s.branch)
-            .put("name", s.authorName)
-            .put("email", s.authorEmail)
+            .put("branch", repo.branch)
+            .put("name", repo.authorName)
+            .put("email", repo.authorEmail)
             .put("device", Build.MODEL ?: "Android")
+            // A repository that isn't open is synced in its own folder, leaving the open one alone.
+            .put("root", if (active) "" else Vault.dir(context, id).path)
         try {
-            Core.sync(config.toString()).also { store.recordSync(it, failed = false) }
+            Core.sync(config.toString()).also { store.recordSync(it, failed = false, id = id) }
         } catch (e: IOException) {
-            store.recordSync(e.message ?: "Sync failed", failed = true)
+            store.recordSync(e.message ?: "Sync failed", failed = true, id = id)
             throw e
         }
     }

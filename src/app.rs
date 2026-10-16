@@ -44,10 +44,27 @@ pub enum Sort {
     Recent,
 }
 
+/// A vault in the repository switcher: a notes folder and the git remote it syncs with.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct Repo {
+    pub path: PathBuf,
+    /// The folder's `origin` remote, as last seen (empty if none).
+    pub url: String,
+}
+
+impl Repo {
+    pub fn name(&self) -> String {
+        self.path.file_name().map_or_else(|| self.path.display().to_string(), |n| n.to_string_lossy().into_owned())
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub vault: Option<PathBuf>,
+    /// Vaults to switch between, each usually its own git repository.
+    pub repos: Vec<Repo>,
     pub recent: Vec<PathBuf>,
     pub last_note: Option<String>,
     pub theme: ThemeChoice,
@@ -68,6 +85,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             vault: None,
+            repos: Vec::new(),
             recent: Vec::new(),
             last_note: None,
             theme: ThemeChoice::System,
@@ -132,6 +150,9 @@ pub(crate) enum Action {
     Rescan,
     OpenVault,
     CloneVault,
+    SwitchRepo(PathBuf),
+    /// Drops a vault from the switcher; its files stay on disk.
+    RemoveRepo(PathBuf),
     Back,
     Forward,
     Search,
@@ -269,6 +290,9 @@ impl App {
                 self.s.recent.retain(|p| p != &path);
                 self.s.recent.insert(0, path.clone());
                 self.s.recent.truncate(8);
+                if !self.s.repos.iter().any(|r| r.path == path) {
+                    self.s.repos.push(Repo { path: path.clone(), url: String::new() });
+                }
                 if self.s.vault.as_ref() != Some(&path) {
                     self.s.expanded.clear();
                 }
@@ -468,6 +492,15 @@ impl App {
                 self.rescan();
             }
         }
+        // Keep the switcher's remote URL for this vault current.
+        if let (Some(st), Some(v)) = (&self.git.status, &self.vault) {
+            let url = st.remote.clone().unwrap_or_default();
+            if let Some(repo) = self.s.repos.iter_mut().find(|r| r.path == v.root) {
+                if repo.url != url {
+                    repo.url = url;
+                }
+            }
+        }
         if self.sync_after_status {
             if let Some(st) = &self.git.status {
                 self.sync_after_status = false;
@@ -592,6 +625,8 @@ impl App {
                 }
             }
             Action::CloneVault => self.dialog = Some(Dialog::Clone { url: String::new(), parent: None }),
+            Action::SwitchRepo(path) => self.switch_repo(path),
+            Action::RemoveRepo(path) => self.s.repos.retain(|r| r.path != path),
             Action::Back => {
                 if self.hist_pos > 0 {
                     self.hist_pos -= 1;
@@ -809,6 +844,29 @@ impl App {
                 self.refresh_trash();
             }
         }
+    }
+
+    /// Opens another vault from the switcher. Unsynced changes in the one being left are
+    /// pushed in the background so they aren't stranded until it's opened again.
+    pub(crate) fn switch_repo(&mut self, path: PathBuf) {
+        if self.vault.as_ref().is_some_and(|v| v.root == path) {
+            return;
+        }
+        if !path.is_dir() {
+            self.error(format!("{} no longer exists. Remove it from the list in Settings.", path.display()));
+            return;
+        }
+        self.save_now();
+        let has_remote = self.git.status.as_ref().is_some_and(|s| s.is_repo && s.remote.is_some());
+        if self.unsynced && has_remote && self.git.busy.is_none() {
+            if let Some(v) = &self.vault {
+                let root = v.root.clone();
+                std::thread::spawn(move || {
+                    let _ = git::sync(&root);
+                });
+            }
+        }
+        self.open_vault(path);
     }
 
     fn on_close(&mut self) {

@@ -52,6 +52,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -87,7 +90,11 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
         topBar = {
             LargeTopAppBar(
                 title = {
-                    Text(if (folder.isEmpty()) vm.appName else nameOf(folder), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (folder.isEmpty()) {
+                        RepoSwitcher(vm)
+                    } else {
+                        Text(nameOf(folder), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 },
                 navigationIcon = {
                     if (folder.isNotEmpty()) {
@@ -353,5 +360,50 @@ private fun EmptyFolder(modifier: Modifier) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * The top-level title: the open repository's name (or the app name while there's only
+ * one), opening a menu to switch repositories or add one.
+ */
+@Composable
+private fun RepoSwitcher(vm: VaultViewModel) {
+    var open by remember { mutableStateOf(false) }
+    val gruvbox = LocalGruvbox.current
+    val title = if (vm.repos.size > 1) vm.activeRepo.label else vm.appName
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clickable(onClickLabel = "Switch repository") { open = true },
+        ) {
+            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            for (repo in vm.repos) {
+                val current = repo.id == vm.activeRepoId
+                DropdownMenuItem(
+                    text = { Text(repo.label) },
+                    leadingIcon = {
+                        Icon(ScrapIcons.Folder, contentDescription = null, tint = if (current) gruvbox.aqua else gruvbox.yellow)
+                    },
+                    trailingIcon = { if (current) Icon(Icons.Default.Check, contentDescription = "Open") },
+                    onClick = {
+                        open = false
+                        if (!current) vm.switchRepo(repo.id)
+                    },
+                )
+            }
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text("Add repository") },
+                leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, tint = gruvbox.aqua) },
+                onClick = {
+                    open = false
+                    vm.navigate(Screen.SyncSetup(adding = true))
+                },
+            )
+        }
     }
 }

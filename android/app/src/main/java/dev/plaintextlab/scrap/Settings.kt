@@ -4,6 +4,8 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import org.json.JSONArray
+import org.json.JSONObject
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -40,25 +42,51 @@ data class AppSettings(
 
 data class SyncStatus(val time: Long, val message: String, val failed: Boolean)
 
+/**
+ * One set of notes: its own folder on the phone and its own GitHub repository.
+ * [id] "default" is the original vault (folder `vault`); others live in `vaults/<id>`.
+ */
+data class Repo(
+    val id: String,
+    /** Optional display name; falls back to the repository's name. */
+    val name: String = "",
+    val url: String = "",
+    val username: String = "",
+    val branch: String = "main",
+    val authorName: String = "",
+    val authorEmail: String = "",
+) {
+    val label: String
+        get() = name.ifBlank { repoName(url) }.ifBlank { "Notes on this phone" }
+
+    companion object {
+        const val DEFAULT = "default"
+
+        /** "https://github.com/you/notes.git" -> "notes". */
+        fun repoName(url: String): String = url.trimEnd('/').substringAfterLast('/').removeSuffix(".git")
+    }
+}
+
 /** Settings in SharedPreferences; the access token is encrypted with an Android Keystore key. */
 class SettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     fun load(): AppSettings = with(prefs) {
+        val repo = activeRepo()
         AppSettings(
             theme = enumOr(getString("theme", null), ThemeMode.System),
             textScale = getFloat("textScale", 1f),
             openInEdit = getBoolean("openInEdit", false),
             sort = enumOr(getString("sort", null), SortOrder.Name),
             sync = SyncSettings(
-                url = getString("sync.url", "")!!,
-                username = getString("sync.username", "")!!,
-                branch = getString("sync.branch", "main")!!,
-                authorName = getString("sync.name", "")!!,
-                authorEmail = getString("sync.email", "")!!,
+                url = repo.url,
+                username = repo.username,
+                branch = repo.branch,
+                authorName = repo.authorName,
+                authorEmail = repo.authorEmail,
                 auto = getBoolean("sync.auto", true),
                 background = getBoolean("sync.background", false),
-                hasToken = contains("sync.token"),
+                hasToken = contains(tokenKey(repo.id)),
             ),
         )
     }
@@ -69,40 +97,126 @@ class SettingsStore(context: Context) {
             .putFloat("textScale", s.textScale)
             .putBoolean("openInEdit", s.openInEdit)
             .putString("sort", s.sort.name)
-            .putString("sync.url", s.sync.url)
-            .putString("sync.username", s.sync.username)
-            .putString("sync.branch", s.sync.branch)
-            .putString("sync.name", s.sync.authorName)
-            .putString("sync.email", s.sync.authorEmail)
             .putBoolean("sync.auto", s.sync.auto)
             .putBoolean("sync.background", s.sync.background)
             .apply()
+        saveRepo(
+            activeRepo().copy(
+                url = s.sync.url,
+                username = s.sync.username,
+                branch = s.sync.branch,
+                authorName = s.sync.authorName,
+                authorEmail = s.sync.authorEmail,
+            ),
+        )
     }
 
-    fun token(): String? = prefs.getString("sync.token", null)?.let(TokenCipher::decrypt)
+    // ---- Repositories -----------------------------------------------------
 
-    fun setToken(token: String?) {
+    fun repos(): List<Repo> {
+        val json = prefs.getString("repos", null)
+            ?: return listOf(
+                // Before multiple repositories: the single connection becomes the first one.
+                Repo(
+                    id = Repo.DEFAULT,
+                    url = prefs.getString("sync.url", "")!!,
+                    username = prefs.getString("sync.username", "")!!,
+                    branch = prefs.getString("sync.branch", "main")!!,
+                    authorName = prefs.getString("sync.name", "")!!,
+                    authorEmail = prefs.getString("sync.email", "")!!,
+                ),
+            )
+        val a = JSONArray(json)
+        return List(a.length()) { i ->
+            val o = a.getJSONObject(i)
+            Repo(
+                id = o.getString("id"),
+                name = o.optString("name"),
+                url = o.optString("url"),
+                username = o.optString("username"),
+                branch = o.optString("branch", "main").ifBlank { "main" },
+                authorName = o.optString("authorName"),
+                authorEmail = o.optString("authorEmail"),
+            )
+        }
+    }
+
+    private fun writeRepos(list: List<Repo>) {
+        val a = JSONArray()
+        for (r in list) {
+            a.put(
+                JSONObject()
+                    .put("id", r.id)
+                    .put("name", r.name)
+                    .put("url", r.url)
+                    .put("username", r.username)
+                    .put("branch", r.branch)
+                    .put("authorName", r.authorName)
+                    .put("authorEmail", r.authorEmail),
+            )
+        }
+        prefs.edit().putString("repos", a.toString()).apply()
+    }
+
+    /** Adds or updates a repository (matched by id). */
+    fun saveRepo(repo: Repo) {
+        val list = repos()
+        writeRepos(if (list.any { it.id == repo.id }) list.map { if (it.id == repo.id) repo else it } else list + repo)
+    }
+
+    fun removeRepo(id: String) {
+        writeRepos(repos().filter { it.id != id })
+        clearSyncStatus(id)
+        prefs.edit().remove(tokenKey(id)).apply()
+    }
+
+    fun activeRepoId(): String = prefs.getString("activeRepo", Repo.DEFAULT)!!
+
+    fun activeRepo(): Repo = repos().let { list -> list.firstOrNull { it.id == activeRepoId() } ?: list.first() }
+
+    fun setActiveRepo(id: String) {
+        prefs.edit().putString("activeRepo", id).apply()
+    }
+
+    // Per-repository keys; the original repository keeps the keys it had before.
+    private fun tokenKey(id: String) = if (id == Repo.DEFAULT) "sync.token" else "sync.token.$id"
+
+    private fun statusKey(base: String, id: String) = if (id == Repo.DEFAULT) base else "$base.$id"
+
+    fun hasToken(id: String): Boolean = prefs.contains(tokenKey(id))
+
+    fun token(id: String = activeRepoId()): String? = prefs.getString(tokenKey(id), null)?.let(TokenCipher::decrypt)
+
+    fun setToken(token: String?, id: String = activeRepoId()) {
         prefs.edit().apply {
-            if (token.isNullOrBlank()) remove("sync.token") else putString("sync.token", TokenCipher.encrypt(token))
+            if (token.isNullOrBlank()) remove(tokenKey(id)) else putString(tokenKey(id), TokenCipher.encrypt(token))
         }.apply()
     }
 
-    fun lastSync(): SyncStatus? {
-        val time = prefs.getLong("sync.lastTime", 0)
+    fun lastSync(id: String = activeRepoId()): SyncStatus? {
+        val time = prefs.getLong(statusKey("sync.lastTime", id), 0)
         if (time == 0L) return null
-        return SyncStatus(time, prefs.getString("sync.lastMessage", "")!!, prefs.getBoolean("sync.lastFailed", false))
+        return SyncStatus(
+            time,
+            prefs.getString(statusKey("sync.lastMessage", id), "")!!,
+            prefs.getBoolean(statusKey("sync.lastFailed", id), false),
+        )
     }
 
-    fun recordSync(message: String, failed: Boolean) {
+    fun recordSync(message: String, failed: Boolean, id: String = activeRepoId()) {
         prefs.edit()
-            .putLong("sync.lastTime", System.currentTimeMillis())
-            .putString("sync.lastMessage", message)
-            .putBoolean("sync.lastFailed", failed)
+            .putLong(statusKey("sync.lastTime", id), System.currentTimeMillis())
+            .putString(statusKey("sync.lastMessage", id), message)
+            .putBoolean(statusKey("sync.lastFailed", id), failed)
             .apply()
     }
 
-    fun clearSyncStatus() {
-        prefs.edit().remove("sync.lastTime").remove("sync.lastMessage").remove("sync.lastFailed").apply()
+    fun clearSyncStatus(id: String = activeRepoId()) {
+        prefs.edit()
+            .remove(statusKey("sync.lastTime", id))
+            .remove(statusKey("sync.lastMessage", id))
+            .remove(statusKey("sync.lastFailed", id))
+            .apply()
     }
 
     private inline fun <reified E : Enum<E>> enumOr(name: String?, default: E): E =

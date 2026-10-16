@@ -39,7 +39,7 @@ fun ScrapApp(vm: VaultViewModel) {
                 is Screen.Note -> NoteScreen(vm, screen.rel, snackbar)
                 Screen.Trash -> TrashScreen(vm, snackbar)
                 Screen.Settings -> SettingsScreen(vm, snackbar)
-                Screen.SyncSetup -> SyncSetupScreen(vm, snackbar)
+                is Screen.SyncSetup -> SyncSetupScreen(vm, snackbar, screen.adding)
             }
         }
         // Search sits over the notes list; it stays open behind a result opened from it.
