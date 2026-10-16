@@ -28,6 +28,7 @@ The desktop and Android apps share the same core and the same features:
 ![Alt text](/screenshots/1.png?raw=true "Destkop_1")
 ![Alt text](/screenshots/2.png?raw=true "Destkop_2")
 ![Alt text](/screenshots/3.png?raw=true "Destkop_3")
+![The six themes: Gruvbox, Everforest, Nord, Catppuccin, Solarized and Tokyo Night](/screenshots/themes.png?raw=true "Themes")
 ![Alt text](/screenshots/4.jpg?raw=true "Android_1")
 ![Alt text](/screenshots/5.jpg?raw=true "Android_2")
 ![Alt text](/screenshots/6.jpg?raw=true "Android_3")
