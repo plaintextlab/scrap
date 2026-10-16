@@ -8,6 +8,7 @@ mod git;
 mod layout;
 mod markdown;
 mod pages;
+mod reveal;
 mod search;
 mod sidebar;
 mod theme;

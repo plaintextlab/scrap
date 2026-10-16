@@ -713,9 +713,10 @@ impl App {
             }
             Action::Reveal(rel) => {
                 if let Some(v) = &self.vault {
-                    let path = v.path(&rel);
-                    let dir = if path.is_dir() { path } else { path.parent().map(PathBuf::from).unwrap_or(path) };
-                    self.ctx.open_url(egui::OpenUrl::new_tab(attach::file_uri(&dir)));
+                    // In Explorer/Finder/the file manager, never the browser.
+                    if let Err(e) = crate::reveal::reveal(&v.path(&rel)) {
+                        self.error(format!("Couldn't open the file manager: {e}"));
+                    }
                 }
             }
             Action::ToggleFolder(rel) => {

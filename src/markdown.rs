@@ -34,7 +34,23 @@ fn mono(size: f32, color: Color32, background: Color32) -> TextFormat {
 // Editor highlighting
 // ---------------------------------------------------------------------------
 
-pub fn highlight(text: &str, visuals: &Visuals, size: f32) -> LayoutJob {
+/// Row height of editor text at `size`; an image line's preview goes below this.
+pub fn editor_row_height(size: f32) -> f32 {
+    (size * 1.4).ceil()
+}
+
+/// `![alt](url)` alone on a line (surrounding spaces allowed): the url.
+pub fn image_line(line: &str) -> Option<&str> {
+    let t = line.trim();
+    let rest = t.strip_prefix("![")?;
+    let close = rest.find("](")?;
+    let url = rest[close + 2..].strip_suffix(')')?;
+    (!url.is_empty() && !url.contains(')')).then_some(url.trim())
+}
+
+/// Syntax-highlights markdown for the editor. `image_room` gives the height to leave free
+/// below a line that is just an image (the editor paints the picture there), or 0.
+pub fn highlight(text: &str, visuals: &Visuals, size: f32, image_room: &dyn Fn(&str) -> f32) -> LayoutJob {
     let c = colors(visuals);
     let base = prop(size, c.text);
     let mut job = LayoutJob::default();
@@ -43,6 +59,22 @@ pub fn highlight(text: &str, visuals: &Visuals, size: f32) -> LayoutJob {
     for line in text.split_inclusive('\n') {
         let trimmed = line.trim_start();
         let indent = line.len() - trimmed.len();
+
+        if !in_fence {
+            if let Some(room) = image_line(line).map(image_room).filter(|&h| h > 0.0) {
+                // Text at the top of the row; the row's last character is made tall enough
+                // to leave the picture's room below it.
+                let body = line.trim_end_matches(['\n', '\r']);
+                let cut = body.char_indices().last().map_or(0, |(i, _)| i);
+                let (head, last) = body.split_at(cut);
+                let top = TextFormat { valign: egui::Align::TOP, ..prop(size, c.faint) };
+                job.append(head, 0.0, top.clone());
+                let tall = TextFormat { line_height: Some(editor_row_height(size) + room), ..top };
+                job.append(last, 0.0, tall);
+                job.append(&line[body.len()..], 0.0, base.clone());
+                continue;
+            }
+        }
 
         if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
             in_fence = !in_fence;
@@ -673,9 +705,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn image_lines() {
+        assert_eq!(image_line("![](.attachments/a.png)"), Some(".attachments/a.png"));
+        assert_eq!(image_line("  ![photo](b c.jpg)\n"), Some("b c.jpg"));
+        assert_eq!(image_line("see ![x](a.png)"), None);
+        assert_eq!(image_line("![x](a.png) and text"), None);
+        assert_eq!(image_line("![x]()"), None);
+    }
+
+    #[test]
     fn highlighting_keeps_every_byte() {
-        let src = "# Title **x**\n- [ ] task with `code` and [[Link|alias]]\n> quote *em*\n```rust\nlet a = 1;\n```\n1. [md](http://x) ![](a.png) #tag ~~gone~~ é**ü**\n**unclosed and [broken\n";
-        let job = highlight(src, &Visuals::dark(), 14.0);
+        let src = "# Title **x**\n- [ ] task with `code` and [[Link|alias]]\n> quote *em*\n```rust\nlet a = 1;\n```\n1. [md](http://x) ![](a.png) #tag ~~gone~~ é**ü**\n![](b.png)\r\n  ![x](c d.jpg)\n**unclosed and [broken\n";
+        let job = highlight(src, &Visuals::dark(), 14.0, &|_| 120.0);
         assert_eq!(job.text, src);
     }
 }

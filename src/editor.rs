@@ -11,6 +11,7 @@ use eframe::egui::{
     text_edit::TextEditState,
     Frame, Id, Margin, ScrollArea, TextBuffer, Ui,
 };
+use std::collections::HashMap;
 use std::time::Instant;
 
 /// Formatting toolbar commands.
@@ -137,13 +138,16 @@ impl App {
     fn editor_ui(&mut self, ui: &mut Ui) {
         let size = self.s.font_size;
         let focus = std::mem::take(&mut self.focus_editor);
+        let root = self.vault.as_ref().map(|v| v.root.clone());
         let Some(n) = &mut self.note else { return };
+        let pictures = root.map(|root| pictures(ui.ctx(), &root, &n.rel, &n.text)).unwrap_or_default();
         let mut follow = None;
         ScrollArea::vertical().id_salt("editor").auto_shrink([false, false]).show(ui, |ui| {
             Frame::new().inner_margin(Margin::symmetric(28, 20)).show(ui, |ui| {
                 centered(ui, |ui| {
                     let mut layouter = |ui: &Ui, text: &dyn TextBuffer, wrap_width: f32| {
-                        let mut job = markdown::highlight(text.as_str(), ui.visuals(), size);
+                        let room = |url: &str| pictures.get(url).map_or(0.0, |p| p.fit(wrap_width).y + PICTURE_GAP);
+                        let mut job = markdown::highlight(text.as_str(), ui.visuals(), size, &room);
                         job.wrap.max_width = wrap_width;
                         ui.fonts_mut(|f| f.layout_job(job))
                     };
@@ -156,6 +160,7 @@ impl App {
                         .min_size(egui::vec2(0.0, (ui.available_height() - 40.0).max(200.0)))
                         .layouter(&mut layouter)
                         .show(ui);
+                    paint_pictures(ui, &out, &n.text, &pictures, size);
                     if out.response.changed() {
                         n.edited = Some(Instant::now());
                     }
@@ -196,6 +201,94 @@ impl App {
         });
         if let Some(url) = clicked {
             self.actions.push(Action::Link(url));
+        }
+    }
+}
+
+/// Tallest an image is shown while editing; Read view shows it full size.
+const PICTURE_MAX_HEIGHT: f32 = 420.0;
+/// Space between an image line's text and its picture, and below the picture.
+const PICTURE_GAP: f32 = 10.0;
+
+/// An image shown under its `![](...)` line in the editor.
+struct Picture {
+    uri: String,
+    size: egui::Vec2,
+}
+
+impl Picture {
+    /// Display size within `width`: never enlarged, at most `PICTURE_MAX_HEIGHT` tall.
+    fn fit(&self, width: f32) -> egui::Vec2 {
+        if self.size.x <= 0.0 || self.size.y <= 0.0 {
+            return egui::Vec2::ZERO;
+        }
+        let scale = (width / self.size.x).min(PICTURE_MAX_HEIGHT / self.size.y).min(1.0);
+        self.size * scale
+    }
+}
+
+/// Images on their own line in `text` whose size is known, keyed by their link. Others
+/// (still loading, missing, on the web) get no preview; the loader repaints when one is ready.
+fn pictures(ctx: &egui::Context, root: &std::path::Path, note_rel: &str, text: &str) -> HashMap<String, Picture> {
+    let mut out = HashMap::new();
+    for url in image_lines(text).map(|(_, url)| url) {
+        if out.contains_key(url) {
+            continue;
+        }
+        let Some(rel) = scrap_core::attachments::resolve(note_rel, url) else { continue };
+        let path = root.join(rel);
+        if !path.is_file() {
+            continue;
+        }
+        let uri = crate::attach::file_uri(&path);
+        let size = match ctx.try_load_texture(&uri, egui::TextureOptions::LINEAR, egui::SizeHint::default()) {
+            Ok(egui::load::TexturePoll::Ready { texture }) => Some(texture.size),
+            Ok(egui::load::TexturePoll::Pending { size }) => size,
+            Err(_) => None,
+        };
+        if let Some(size) = size {
+            out.insert(url.to_string(), Picture { uri, size });
+        }
+    }
+    out
+}
+
+/// Image-only lines outside code blocks: (char index of the line's last character, link).
+fn image_lines(text: &str) -> impl Iterator<Item = (usize, &str)> {
+    let mut in_fence = false;
+    let mut chars = 0;
+    text.split_inclusive('\n').filter_map(move |line| {
+        let start = chars;
+        chars += line.chars().count();
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            return None;
+        }
+        if in_fence {
+            return None;
+        }
+        let url = markdown::image_line(line)?;
+        let body = line.trim_end_matches(['\n', '\r']);
+        Some((start + body.chars().count().saturating_sub(1), url))
+    })
+}
+
+/// Paints each picture in the room `markdown::highlight` left below its line.
+fn paint_pictures(ui: &Ui, out: &egui::text_edit::TextEditOutput, text: &str, pictures: &HashMap<String, Picture>, size: f32) {
+    if pictures.is_empty() {
+        return;
+    }
+    let width = out.response.rect.width();
+    for (last_char, url) in image_lines(text) {
+        let Some(picture) = pictures.get(url) else { continue };
+        let row = out.galley.pos_from_cursor(egui::text::CCursor::new(last_char));
+        let top = out.galley_pos.y + row.top() + markdown::editor_row_height(size) + PICTURE_GAP / 2.0;
+        let rect = egui::Rect::from_min_size(egui::pos2(out.galley_pos.x, top), picture.fit(width));
+        if ui.is_rect_visible(rect) {
+            egui::Image::new(picture.uri.as_str())
+                .corner_radius(egui::CornerRadius::same(10))
+                .paint_at(ui, rect);
         }
     }
 }
