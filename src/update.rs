@@ -410,7 +410,7 @@ fn downloads_dir() -> PathBuf {
     }
 }
 
-fn curl(args: &[&str]) -> Result<Vec<u8>, String> {
+pub(crate) fn curl(args: &[&str]) -> Result<Vec<u8>, String> {
     let mut cmd = Command::new("curl");
     cmd.args(["--connect-timeout", "15"]).args(args).stdin(Stdio::null());
     hide_console(&mut cmd);

@@ -15,6 +15,7 @@ mod theme;
 mod time;
 mod update;
 mod widgets;
+mod youtube;
 
 use scrap_core::vault;
 

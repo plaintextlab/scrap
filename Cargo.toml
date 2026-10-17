@@ -17,6 +17,8 @@ eframe = { version = "0.36", default-features = false, features = [
 # Images in notes: decoding for display, and downscaling when they're added.
 egui_extras = { version = "0.36", default-features = false, features = ["file", "image"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
+# Reading images from the clipboard (egui only pastes text). Already used by eframe.
+arboard = { version = "3.6", default-features = false, features = ["image-data"] }
 # Icon font (Phosphor), rendered as text so it scales and themes like the UI.
 egui-phosphor = "0.14"
 pulldown-cmark = { version = "0.12", default-features = false }

@@ -5,6 +5,7 @@ use crate::format;
 use crate::layout::centered;
 use crate::markdown;
 use crate::theme;
+use crate::youtube;
 use eframe::egui::{
     self,
     text::{CCursor, CCursorRange},
@@ -210,15 +211,20 @@ const PICTURE_MAX_HEIGHT: f32 = 420.0;
 /// Space between an image line's text and its picture, and below the picture.
 const PICTURE_GAP: f32 = 10.0;
 
-/// An image shown under its `![](...)` line in the editor.
+/// An image shown under its `![](...)` line in the editor, or a YouTube link's video card.
 struct Picture {
-    uri: String,
+    /// The image; for a video, its thumbnail once downloaded.
+    uri: Option<String>,
     size: egui::Vec2,
+    video: bool,
 }
 
 impl Picture {
     /// Display size within `width`: never enlarged, at most `PICTURE_MAX_HEIGHT` tall.
     fn fit(&self, width: f32) -> egui::Vec2 {
+        if self.video {
+            return youtube::card_size(width);
+        }
         if self.size.x <= 0.0 || self.size.y <= 0.0 {
             return egui::Vec2::ZERO;
         }
@@ -227,12 +233,18 @@ impl Picture {
     }
 }
 
-/// Images on their own line in `text` whose size is known, keyed by their link. Others
-/// (still loading, missing, on the web) get no preview; the loader repaints when one is ready.
+/// Images on their own line in `text` whose size is known, and YouTube links, keyed by their
+/// link. Other images (still loading, missing, on the web) get no preview; the loader
+/// repaints when one is ready.
 fn pictures(ctx: &egui::Context, root: &std::path::Path, note_rel: &str, text: &str) -> HashMap<String, Picture> {
     let mut out = HashMap::new();
     for url in image_lines(text).map(|(_, url)| url) {
         if out.contains_key(url) {
+            continue;
+        }
+        if let Some(id) = youtube::video_id(url) {
+            let uri = youtube::thumbnail(ctx, id);
+            out.insert(url.to_string(), Picture { uri, size: egui::Vec2::ZERO, video: true });
             continue;
         }
         let Some(rel) = scrap_core::attachments::resolve(note_rel, url) else { continue };
@@ -247,7 +259,7 @@ fn pictures(ctx: &egui::Context, root: &std::path::Path, note_rel: &str, text: &
             Err(_) => None,
         };
         if let Some(size) = size {
-            out.insert(url.to_string(), Picture { uri, size });
+            out.insert(url.to_string(), Picture { uri: Some(uri), size, video: false });
         }
     }
     out
@@ -268,7 +280,7 @@ fn image_lines(text: &str) -> impl Iterator<Item = (usize, &str)> {
         if in_fence {
             return None;
         }
-        let url = markdown::image_line(line)?;
+        let url = markdown::preview_line(line)?;
         let body = line.trim_end_matches(['\n', '\r']);
         Some((start + body.chars().count().saturating_sub(1), url))
     })
@@ -285,10 +297,14 @@ fn paint_pictures(ui: &Ui, out: &egui::text_edit::TextEditOutput, text: &str, pi
         let row = out.galley.pos_from_cursor(egui::text::CCursor::new(last_char));
         let top = out.galley_pos.y + row.top() + markdown::editor_row_height(size) + PICTURE_GAP / 2.0;
         let rect = egui::Rect::from_min_size(egui::pos2(out.galley_pos.x, top), picture.fit(width));
-        if ui.is_rect_visible(rect) {
-            egui::Image::new(picture.uri.as_str())
-                .corner_radius(egui::CornerRadius::same(10))
-                .paint_at(ui, rect);
+        if !ui.is_rect_visible(rect) {
+            continue;
+        }
+        if picture.video {
+            let hovered = ui.rect_contains_pointer(rect);
+            youtube::paint(ui, rect, picture.uri.as_deref(), hovered);
+        } else if let Some(uri) = &picture.uri {
+            egui::Image::new(uri.as_str()).corner_radius(egui::CornerRadius::same(10)).paint_at(ui, rect);
         }
     }
 }

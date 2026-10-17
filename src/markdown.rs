@@ -48,6 +48,21 @@ pub fn image_line(line: &str) -> Option<&str> {
     (!url.is_empty() && !url.contains(')')).then_some(url.trim())
 }
 
+/// A YouTube link alone on a line, bare, `<url>` or `[title](url)`: the url.
+pub fn video_line(line: &str) -> Option<&str> {
+    let t = line.trim();
+    let url = match t.strip_prefix('[') {
+        Some(rest) => rest.split_once("](")?.1.strip_suffix(')')?,
+        None => t.trim_start_matches('<').trim_end_matches('>'),
+    };
+    crate::youtube::video_id(url).map(|_| url.trim())
+}
+
+/// A line the editor shows a preview under: an image, or a YouTube video.
+pub fn preview_line(line: &str) -> Option<&str> {
+    image_line(line).or_else(|| video_line(line))
+}
+
 /// Syntax-highlights markdown for the editor. `image_room` gives the height to leave free
 /// below a line that is just an image (the editor paints the picture there), or 0.
 pub fn highlight(text: &str, visuals: &Visuals, size: f32, image_room: &dyn Fn(&str) -> f32) -> LayoutJob {
@@ -61,7 +76,7 @@ pub fn highlight(text: &str, visuals: &Visuals, size: f32, image_room: &dyn Fn(&
         let indent = line.len() - trimmed.len();
 
         if !in_fence {
-            if let Some(room) = image_line(line).map(image_room).filter(|&h| h > 0.0) {
+            if let Some(room) = preview_line(line).map(image_room).filter(|&h| h > 0.0) {
                 // Text at the top of the row; the row's last character is made tall enough
                 // to leave the picture's room below it.
                 let body = line.trim_end_matches(['\n', '\r']);
@@ -480,6 +495,11 @@ impl Renderer {
     fn end(&mut self, ui: &mut Ui, images: &Images) {
         match self.stack.pop() {
             Some(Open::Para) => {
+                if let Some((url, title)) = self.video_paragraph() {
+                    self.spans.clear();
+                    self.video(ui, &url, title.as_deref());
+                    return;
+                }
                 self.flush(ui);
                 ui.add_space(if self.lists.is_empty() { self.size * 0.7 } else { 2.0 });
             }
@@ -543,7 +563,45 @@ impl Renderer {
         }
     }
 
+    /// The YouTube link a paragraph consists of, if that's all it is, and its title (the
+    /// link text, when that isn't just the url).
+    fn video_paragraph(&self) -> Option<(String, Option<String>)> {
+        if self.table.is_some() || self.bullet.is_some() || self.spans.is_empty() {
+            return None;
+        }
+        let first = self.spans[0].style.link.clone();
+        let url = match first {
+            Some(link) if self.spans.iter().all(|s| s.style.link.as_ref() == Some(&link)) => link,
+            None if self.spans.iter().all(|s| s.style.link.is_none()) => {
+                self.spans.iter().map(|s| s.text.as_str()).collect::<String>().trim().to_string()
+            }
+            _ => return None,
+        };
+        crate::youtube::video_id(&url)?;
+        let text: String = self.spans.iter().map(|s| s.text.as_str()).collect();
+        let text = text.trim();
+        let title = (!text.is_empty() && text != url).then(|| text.to_string());
+        Some((url, title))
+    }
+
+    fn video(&mut self, ui: &mut Ui, url: &str, title: Option<&str>) {
+        let Some(id) = crate::youtube::video_id(url) else { return };
+        ui.add_space(4.0);
+        if crate::youtube::card(ui, url, id) {
+            self.clicked = Some(url.to_string());
+        }
+        if let Some(title) = title {
+            ui.add_space(2.0);
+            ui.label(RichText::new(title).size(self.size * 0.9).color(self.c.muted));
+        }
+        ui.add_space(self.size * 0.7);
+    }
+
     fn image(&mut self, ui: &mut Ui, url: &str, images: &Images) {
+        if crate::youtube::video_id(url).is_some() {
+            self.video(ui, url, None);
+            return;
+        }
         let local = scrap_core::attachments::resolve(images.note_rel, url).map(|rel| images.root.join(rel));
         match local {
             Some(path) if path.exists() => {
@@ -711,6 +769,12 @@ mod tests {
         assert_eq!(image_line("see ![x](a.png)"), None);
         assert_eq!(image_line("![x](a.png) and text"), None);
         assert_eq!(image_line("![x]()"), None);
+        let yt = "https://youtu.be/dQw4w9WgXcQ";
+        assert_eq!(video_line(&format!(" {yt}\n")), Some(yt));
+        assert_eq!(video_line(&format!("<{yt}>")), Some(yt));
+        assert_eq!(video_line(&format!("[A song]({yt})")), Some(yt));
+        assert_eq!(video_line(&format!("watch {yt}")), None);
+        assert_eq!(video_line("https://example.com"), None);
     }
 
     #[test]

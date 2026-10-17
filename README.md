@@ -13,7 +13,8 @@ The desktop and Android apps share the same core and the same features:
 - **Vault = any folder** of markdown files. Nothing proprietary; hidden folders (`.git`, `.obsidian`, …) are ignored, so an existing Obsidian vault opens as-is.
 - **Folders, nested as deep as you like.** Create, rename, and **move** notes and folders (on the desktop also by drag and drop in the sidebar). Sort by name or last edited.
 - **Editor with live syntax highlighting** and a **formatting toolbar**: undo/redo, heading, bold, italic, strikethrough, lists, checklists, quotes, `[[links]]`, code. Plus a rendered **Read** view and (desktop) a **Split** view.
-- **Images in notes**: pick files, drop them on the window, or (Android) take a photo. They're downscaled, stored in the vault's hidden `.attachments/` folder, synced with your notes, and shown full width in the reader.
+- **Images in notes**: pick files, drop them on the window, paste a screenshot with Ctrl/Cmd+V, or (Android) take a photo. They're downscaled, stored in the vault's hidden `.attachments/` folder, synced with your notes, and previewed while you edit as well as in the reader.
+- **YouTube previews** (desktop): a YouTube link on its own line shows the video's thumbnail; click it to watch.
 - **Instant search** (Ctrl+K): recent notes, matching names and matching lines with the hits highlighted. Type a name that doesn't exist to create it.
 - **`[[Wiki links]]`**, including `[[Note|alias]]` and `[[Note#heading]]`. Click in Read mode, or Ctrl/Cmd+click in the editor. Linking to a note that doesn't exist creates it. **Backlinks and outgoing links** panel.
 - **Renaming a note updates links** to it across the vault; **moving one keeps its image links working**.

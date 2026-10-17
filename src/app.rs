@@ -210,6 +210,8 @@ pub struct App {
     pub(crate) toasts: Vec<Toast>,
     focused: bool,
     pub(crate) focus_editor: bool,
+    /// Whether egui saw the V key go down; see `handle_paste`.
+    v_down: bool,
     title: String,
     pub(crate) actions: Vec<Action>,
     /// Phone-sized window: the file list replaces the note instead of sitting beside it.
@@ -246,6 +248,7 @@ impl App {
             toasts: Vec::new(),
             focused: true,
             focus_editor: false,
+            v_down: false,
             title: String::new(),
             actions: Vec::new(),
             narrow: false,
@@ -752,17 +755,35 @@ impl App {
         };
         let root = v.root.clone();
         let rel = n.rel.clone();
-        let mut markdown = Vec::new();
+        let mut saved = Vec::new();
         for path in paths {
             if !attach::is_image(path) {
                 self.error(format!("{} isn't an image", path.display()));
                 continue;
             }
             match attach::import(&root, path) {
-                Ok(saved) => markdown.push(format!("![]({})", scrap_core::attachments::link_from(&rel, &saved))),
+                Ok(s) => saved.push(s),
                 Err(e) => self.error(e),
             }
         }
+        self.insert_images(&rel, &saved);
+    }
+
+    /// Pastes the clipboard's image into the open note, if it holds one.
+    fn paste_image(&mut self) {
+        let (Some(v), Some(n)) = (&self.vault, &self.note) else { return };
+        let (root, rel) = (v.root.clone(), n.rel.clone());
+        match attach::import_clipboard(&root) {
+            Ok(Some(saved)) => self.insert_images(&rel, &[saved]),
+            Ok(None) => {}
+            Err(e) => self.error(e),
+        }
+    }
+
+    /// Links images just saved into the vault at the cursor of the note `rel`.
+    fn insert_images(&mut self, rel: &str, saved: &[String]) {
+        let markdown: Vec<String> =
+            saved.iter().map(|s| format!("![]({})", scrap_core::attachments::link_from(rel, s))).collect();
         if markdown.is_empty() {
             return;
         }
@@ -1010,6 +1031,29 @@ impl App {
         ctx.request_repaint_after(Duration::from_secs(30));
     }
 
+    /// Ctrl/Cmd+V with an image on the clipboard pastes it into the open note.
+    ///
+    /// egui only pastes text: when the clipboard has none, the key press is swallowed and
+    /// nothing reaches the app except the V key's release. So a release of V without a
+    /// press that egui saw means a paste command found no text.
+    fn handle_paste(&mut self, ctx: &egui::Context) {
+        let mut paste = false;
+        ctx.input(|i| {
+            for event in &i.events {
+                match event {
+                    egui::Event::Key { key: egui::Key::V, pressed: true, .. } => self.v_down = true,
+                    egui::Event::Key { key: egui::Key::V, pressed: false, .. } => {
+                        paste |= !std::mem::take(&mut self.v_down);
+                    }
+                    _ => {}
+                }
+            }
+        });
+        if paste && self.page == Page::Notes && self.note.is_some() && self.dialog.is_none() && self.search.is_none() {
+            self.paste_image();
+        }
+    }
+
     /// Images dropped onto the window go into the open note.
     fn handle_drops(&mut self, ctx: &egui::Context) {
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
@@ -1048,6 +1092,7 @@ impl eframe::App for App {
         self.shortcuts(&ctx);
         self.timers(&ctx);
         self.handle_drops(&ctx);
+        self.handle_paste(&ctx);
 
         self.narrow = ctx.content_rect().width() < 720.0;
         if self.narrow && self.s.view == View::Split {

@@ -32,16 +32,41 @@ pub fn file_uri(path: &Path) -> String {
 /// Copies the image at `src` into the vault and returns its vault-relative path.
 pub fn import(vault: &Path, src: &Path) -> Result<String, String> {
     let bytes = std::fs::read(src).map_err(|e| format!("Couldn't read {}: {e}", src.display()))?;
-    let format = image::guess_format(&bytes).map_err(|_| format!("{} isn't an image Scrap can read", src.display()))?;
+    import_bytes(vault, &bytes, &src.display().to_string())
+}
+
+/// Saves the image on the clipboard into the vault, if there is one. Screenshots stay PNG
+/// so text in them stays sharp. `Ok(None)` means the clipboard holds no image (or holds text).
+pub fn import_clipboard(vault: &Path) -> Result<Option<String>, String> {
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("Couldn't open the clipboard: {e}"))?;
+    // Text wins when there's both (an Excel range, say): egui has already pasted it.
+    if clipboard.get_text().is_ok_and(|t| !t.is_empty()) {
+        return Ok(None);
+    }
+    let Ok(data) = clipboard.get_image() else { return Ok(None) };
+    import_rgba(vault, data.width as u32, data.height as u32, data.bytes.into_owned()).map(Some)
+}
+
+/// Saves raw RGBA pixels (as the clipboard gives them) as a PNG in the vault.
+fn import_rgba(vault: &Path, width: u32, height: u32, pixels: Vec<u8>) -> Result<String, String> {
+    let img = image::RgbaImage::from_raw(width, height, pixels).ok_or("The pasted image is malformed")?;
+    let mut png = Vec::new();
+    DynamicImage::ImageRgba8(img).write_to(&mut Cursor::new(&mut png), ImageFormat::Png).map_err(|e| e.to_string())?;
+    import_bytes(vault, &png, "the pasted image")
+}
+
+/// Stores an encoded image in the vault; `label` names it in errors.
+fn import_bytes(vault: &Path, bytes: &[u8], label: &str) -> Result<String, String> {
+    let format = image::guess_format(bytes).map_err(|_| format!("{label} isn't an image Scrap can read"))?;
     let stamp = time::stamp(time::now_millis());
 
     // GIFs keep their animation; everything else is re-encoded at a sensible size.
     if format == ImageFormat::Gif {
         let rel = attachments::free_name(vault, &stamp, "gif").map_err(|e| e.to_string())?;
-        std::fs::write(vault.join(&rel), &bytes).map_err(|e| e.to_string())?;
+        std::fs::write(vault.join(&rel), bytes).map_err(|e| e.to_string())?;
         return Ok(rel);
     }
-    let img = decode(&bytes).map_err(|e| format!("Couldn't decode {}: {e}", src.display()))?;
+    let img = decode(bytes).map_err(|e| format!("Couldn't decode {label}: {e}"))?;
     let img = if img.width().max(img.height()) > MAX_SIDE {
         img.resize(MAX_SIDE, MAX_SIDE, FilterType::Triangle)
     } else {
@@ -94,6 +119,20 @@ mod tests {
         let again = import(&vault, &src).unwrap();
         assert_ne!(rel, again);
         assert!(import(&vault, &dir.join("missing.png")).is_err());
+    }
+
+    #[test]
+    fn pasted_pixels_become_a_png() {
+        let vault = std::env::temp_dir().join(format!("scrap-paste-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&vault);
+        let pixels = [10u8, 20, 30, 255].repeat(40 * 30);
+        let rel = import_rgba(&vault, 40, 30, pixels).unwrap();
+        assert!(rel.starts_with(".attachments/IMG-") && rel.ends_with(".png"), "{rel}");
+        let saved = image::open(vault.join(&rel)).unwrap().to_rgba8();
+        assert_eq!((saved.width(), saved.height()), (40, 30));
+        assert_eq!(saved.get_pixel(5, 5).0, [10, 20, 30, 255]);
+        assert!(import_rgba(&vault, 40, 30, vec![0; 7]).is_err());
+        let _ = std::fs::remove_dir_all(&vault);
     }
 
     #[test]
