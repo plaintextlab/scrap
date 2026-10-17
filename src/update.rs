@@ -5,7 +5,8 @@
 //! macOS and Linux) and are checked against the SHA-256 GitHub publishes for each asset.
 //!
 //! How an update is applied depends on how Scrap was installed:
-//! - Windows `.exe`: the new file replaces the running one (renamed aside first).
+//! - Windows portable `.exe`: the new file replaces the running one (renamed aside first).
+//! - Windows installed copy: the new setup runs silently once Scrap exits, then reopens it.
 //! - macOS `.app`: the bundle is replaced from the `.dmg`.
 //! - Linux AppImage: the AppImage file is replaced.
 //! - Linux `.deb`/`.rpm`: the package is downloaded and opened in the system installer.
@@ -54,6 +55,8 @@ pub struct Release {
 enum Method {
     /// Replace this file with the downloaded one (Windows exe, Linux AppImage).
     ReplaceFile(PathBuf),
+    /// Run the newer Windows setup over this installation.
+    Setup,
     /// Replace this `.app` bundle from the downloaded disk image.
     MacBundle(PathBuf),
     /// Download a .deb/.rpm and open it in the system installer.
@@ -207,7 +210,11 @@ pub fn newer(candidate: &str, current: &str) -> bool {
 fn method() -> Method {
     let Ok(exe) = std::env::current_exe() else { return Method::Manual("Couldn't locate the running app.") };
     if cfg!(windows) {
-        return Method::ReplaceFile(exe);
+        // The installer leaves its uninstaller next to scrap.exe; the portable exe has none.
+        return match exe.parent() {
+            Some(dir) if dir.join("unins000.exe").is_file() => Method::Setup,
+            _ => Method::ReplaceFile(exe),
+        };
     }
     if cfg!(target_os = "macos") {
         // .../Scrap.app/Contents/MacOS/scrap
@@ -231,6 +238,7 @@ fn method() -> Method {
 fn asset_suffix(method: &Method) -> Option<&'static str> {
     match method {
         Method::ReplaceFile(_) if cfg!(windows) => Some("-windows-x64.exe"),
+        Method::Setup => Some("-windows-x64-setup.exe"),
         Method::ReplaceFile(_) => Some("-x86_64.AppImage"),
         Method::MacBundle(_) => Some("-macos-universal.dmg"),
         Method::Package if Path::new("/etc/debian_version").exists() => Some("-amd64.deb"),
@@ -257,6 +265,24 @@ fn install(release: &Release) -> Result<Outcome, String> {
             }
             replace_file(target, &staged)?;
             Ok(Outcome::Restart(Restart { version, program: target.clone(), args: restart_args() }))
+        }
+        Method::Setup => {
+            let dir = scratch_dir()?;
+            let setup = dir.join(&asset.name);
+            download(asset, &setup)?;
+            // Runs when Scrap exits; setup waits for it to close, installs into the same
+            // place (it remembers per-user or all-users) and starts Scrap again.
+            Ok(Outcome::Restart(Restart {
+                version,
+                program: setup,
+                args: vec![
+                    "/SILENT".into(),
+                    "/SUPPRESSMSGBOXES".into(),
+                    "/NORESTART".into(),
+                    "/CLOSEAPPLICATIONS".into(),
+                    "/RELAUNCH=1".into(),
+                ],
+            }))
         }
         Method::MacBundle(bundle) => {
             let dir = scratch_dir()?;

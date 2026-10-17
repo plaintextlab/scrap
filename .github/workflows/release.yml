@@ -3,7 +3,7 @@ name: release
 # Every push is tested and packaged; pushes to main are also published as a GitHub
 # Release with exactly these downloads:
 #   Linux:   .flatpak, .AppImage, .deb, .rpm (x86_64)
-#   Windows: .exe (x64)
+#   Windows: setup .exe (installer) and portable .exe (x64)
 #   macOS:   .dmg (universal: Apple Silicon and Intel)
 #   Android: .apk (arm64)
 # Version: <major>.<minor> from Cargo.toml + the workflow run number (e.g. v0.1.42).
@@ -132,6 +132,12 @@ jobs:
         run: |
           mkdir -p dist
           cp target/release/scrap.exe "dist/scrap-v${{ needs.version.outputs.version }}-windows-x64.exe"
+      - name: Installer
+        run: |
+          iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          if [ ! -x "$iscc" ]; then choco install innosetup -y --no-progress; fi
+          "$iscc" //Qp "//DVersion=${{ needs.version.outputs.version }}" packaging/windows/scrap.iss
+          ls -l dist
       - uses: actions/upload-artifact@v4
         with:
           name: windows

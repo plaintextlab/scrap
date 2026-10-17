@@ -73,7 +73,7 @@ Get the latest version from the [Releases page](https://github.com/plaintextlab/
 
 | System | Download |
 | --- | --- |
-| Windows (x64) | `scrap-v…-windows-x64.exe`, a single program; run it from anywhere |
+| Windows (x64) | `scrap-v…-windows-x64-setup.exe`, an installer (Start menu entry, uninstall from Settings → Apps; no admin needed) — or `scrap-v…-windows-x64.exe`, the portable program; run it from anywhere |
 | macOS (Apple Silicon and Intel) | `scrap-v…-macos-universal.dmg`; drag Scrap to Applications |
 | Linux (x86_64) | `.AppImage`, `.deb`, `.rpm` or `.flatpak` |
 | Android | `scrap-v…-android-arm64.apk` |
