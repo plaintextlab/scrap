@@ -29,6 +29,8 @@ pub enum Op {
     Quote,
     WikiLink,
     Code,
+    /// Colour the selection with a name from `scrap_core::colors::NAMES`, or remove it.
+    Color(Option<&'static str>),
 }
 
 fn editor_id(rel: &str) -> Id {
@@ -77,6 +79,7 @@ impl App {
                             format::wrap(text, sel, "`", "`")
                         }
                     }
+                    Op::Color(name) => format::color(text, sel, name),
                     Op::Undo | Op::Redo => unreachable!(),
                 };
                 undoer.add_undo(&current);

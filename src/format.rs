@@ -31,6 +31,38 @@ pub fn wrap(text: &str, sel: (usize, usize), before: &str, after: &str) -> Edit 
     Edit { text: out, selection }
 }
 
+/// Colours the selection (`Some(name)`), or removes its colour (`None`). A selection that
+/// is already coloured, either just inside or including its `<span>` tags, is recoloured
+/// rather than wrapped again. With no selection, an empty coloured span is inserted.
+pub fn color(text: &str, sel: (usize, usize), name: Option<&str>) -> Edit {
+    use scrap_core::colors;
+    let (start, end) = (sel.0.min(sel.1), sel.0.max(sel.1));
+    let (a, z) = (byte(text, start), byte(text, end));
+    // The span being replaced (byte range) and the text it holds.
+    let selected = &text[a..z];
+    let whole = colors::open_tag(selected)
+        .filter(|_| selected.ends_with(colors::CLOSE))
+        .map(|(len, _)| (a, z, a + len, z - colors::CLOSE.len()));
+    let around = || {
+        let before = &text[..a];
+        let open_at = before.rfind('<')?;
+        let (len, _) = colors::open_tag(&before[open_at..])?;
+        (open_at + len == a && text[z..].starts_with(colors::CLOSE)).then_some((open_at, z + colors::CLOSE.len(), a, z))
+    };
+    let (outer_a, outer_z, inner_a, inner_z) = whole.or_else(around).unwrap_or((a, z, a, z));
+    let inner = &text[inner_a..inner_z];
+    if name.is_none() && (outer_a, outer_z) == (inner_a, inner_z) {
+        return Edit { text: text.to_string(), selection: (start, end) };
+    }
+    let (open, close) = match name {
+        Some(n) => (colors::open(n), colors::CLOSE),
+        None => (String::new(), ""),
+    };
+    let out = format!("{}{open}{inner}{close}{}", &text[..outer_a], &text[outer_z..]);
+    let first = chars(&text[..outer_a]) + chars(&open);
+    Edit { text: out, selection: (first, first + chars(inner)) }
+}
+
 /// Adds `prefix` (such as "- " or "# ") to every line the selection touches, or removes
 /// it if all of them already have it.
 pub fn toggle_line_prefix(text: &str, sel: (usize, usize), prefix: &str) -> Edit {
@@ -139,5 +171,27 @@ mod tests {
         assert_eq!(e.selection.0, e.text.chars().count());
         assert_eq!(insert_block("a\n\nb", 3, "X").text, "a\n\nX\n\nb");
         assert_eq!(insert_block("", 0, "X").text, "X\n\n");
+    }
+
+    #[test]
+    fn colors_selection() {
+        let blue = r#"<span style="color: blue">"#;
+        // Wrap, keeping the words selected.
+        let e = color("say hi now", (4, 6), Some("blue"));
+        assert_eq!(e.text, format!("say {blue}hi</span> now"));
+        let (s, z) = e.selection;
+        assert_eq!(e.text.chars().skip(s).take(z - s).collect::<String>(), "hi");
+        // Recolour with the words selected, or the whole span selected.
+        let red = color(&e.text, e.selection, Some("red"));
+        assert_eq!(red.text, r#"say <span style="color: red">hi</span> now"#);
+        let all = (4, 4 + red.text[4..].find(" now").unwrap());
+        assert_eq!(color(&red.text, all, Some("green")).text, r#"say <span style="color: green">hi</span> now"#);
+        // Remove.
+        assert_eq!(color(&red.text, red.selection, None).text, "say hi now");
+        assert_eq!(color("plain", (0, 5), None).text, "plain");
+        // At a cursor: an empty span with the cursor inside.
+        let e = color("ab", (1, 1), Some("blue"));
+        assert_eq!(e.text, format!("a{blue}</span>b"));
+        assert_eq!(e.selection, (1 + blue.len(), 1 + blue.len()));
     }
 }

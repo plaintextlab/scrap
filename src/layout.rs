@@ -189,6 +189,13 @@ impl App {
                 tool(ui, icon::QUOTES, "Quote", Op::Quote, true);
                 tool(ui, icon::BRACKETS_SQUARE, "Link to a note ([[ ]])", Op::WikiLink, true);
                 tool(ui, icon::CODE, "Code", Op::Code, true);
+                let colors = widgets::icon_button(ui, icon::PALETTE, "Text colour");
+                Popup::menu(&colors).show(|ui| {
+                    if let Some(op) = color_menu(ui) {
+                        self.actions.push(Action::Format(op));
+                        ui.close();
+                    }
+                });
                 if widgets::icon_button(ui, icon::IMAGE, "Add images… (or drop them on the window)").clicked() {
                     self.actions.push(Action::AddImages(None));
                 }
@@ -199,7 +206,8 @@ impl App {
     fn note_footer(&mut self, ui: &mut Ui) {
         let p = theme::palette(ui.ctx());
         let Some(n) = &self.note else { return };
-        let words = n.text.split_whitespace().count();
+        // Colour tags aren't words.
+        let words = scrap_core::colors::strip(&n.text).split_whitespace().count();
         let chars = n.text.chars().count();
         let edited = self
             .vault
@@ -314,4 +322,30 @@ pub fn thousands(n: usize) -> String {
         out.push(c);
     }
     out
+}
+
+/// Swatches for each text colour, and "No colour". Returns the chosen command.
+fn color_menu(ui: &mut Ui) -> Option<Op> {
+    let p = theme::palette(ui.ctx());
+    let mut chosen = None;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        for name in scrap_core::colors::NAMES {
+            let color = p.text_color(name).unwrap_or(p.text);
+            let (rect, resp) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::click());
+            if resp.hovered() {
+                ui.painter().rect_filled(rect, CornerRadius::same(6), p.hover);
+            }
+            ui.painter().circle_filled(rect.center(), 9.0, color);
+            let label = format!("{}{}", name[..1].to_uppercase(), &name[1..]);
+            if resp.on_hover_text(label).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                chosen = Some(Op::Color(Some(name)));
+            }
+        }
+    });
+    ui.add_space(2.0);
+    if widgets::menu_item(ui, icon::PROHIBIT, "No colour").clicked() {
+        chosen = Some(Op::Color(None));
+    }
+    chosen
 }

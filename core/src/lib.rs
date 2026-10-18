@@ -2,5 +2,6 @@
 //! link helpers shared by the desktop and Android front ends.
 
 pub mod attachments;
+pub mod colors;
 pub mod links;
 pub mod vault;

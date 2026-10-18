@@ -710,7 +710,8 @@ impl App {
             }
             Action::CopyNote => {
                 if let Some(n) = &self.note {
-                    self.ctx.copy_text(n.text.clone());
+                    // Plain markdown: colours are HTML that most apps would show as tags.
+                    self.ctx.copy_text(scrap_core::colors::strip(&n.text));
                     self.info("Copied the note as markdown");
                 }
             }

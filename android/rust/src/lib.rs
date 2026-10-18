@@ -6,6 +6,7 @@
 use jni::objects::{JClass, JString};
 use jni::sys::jstring;
 use jni::JNIEnv;
+use scrap_core::colors;
 use scrap_core::links::{wikilinks_to_md, LinkStyle};
 use scrap_core::vault::{self, Vault};
 use serde_json::json;
@@ -196,7 +197,30 @@ export!(Java_dev_plaintextlab_scrap_Core_search(query) {
 
 // Markdown with `[[wiki links]]` rewritten as `wiki:` links for the renderer.
 export!(Java_dev_plaintextlab_scrap_Core_preview(text) {
-    Ok(wikilinks_to_md(&text, LinkStyle::Encoded))
+    Ok(guard_spans(&wikilinks_to_md(&text, LinkStyle::Encoded)))
+});
+
+/// A line starting with a colour `<span>` must stay an ordinary paragraph (with the span
+/// as inline HTML the renderer can colour), not be taken for a raw HTML block; an
+/// invisible zero-width space in front of the tag makes sure of that.
+fn guard_spans(md: &str) -> String {
+    let mut out = String::with_capacity(md.len());
+    for line in md.split_inclusive('\n') {
+        let rest = line.trim_start();
+        if colors::open_tag(rest).is_some() {
+            out.push_str(&line[..line.len() - rest.len()]);
+            out.push('\u{200B}');
+            out.push_str(rest);
+        } else {
+            out.push_str(line);
+        }
+    }
+    out
+}
+
+// The note as plain markdown, without colour spans, for sharing.
+export!(Java_dev_plaintextlab_scrap_Core_stripColors(text) {
+    Ok(colors::strip(&text))
 });
 
 // Commits, pulls and pushes the vault. `config` is JSON with url, username, token, branch,

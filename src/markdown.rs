@@ -156,6 +156,23 @@ fn inline(job: &mut LayoutJob, s: &str, f: &TextFormat, c: &Palette) {
     let mut i = 0;
     let mut plain = 0;
     while i < s.len() {
+        if let Some((open, color)) = s[i..].starts_with('<').then(|| scrap_core::colors::open_tag(&s[i..])).flatten() {
+            if let Some(close) = s[i + open..].find(scrap_core::colors::CLOSE) {
+                if plain < i {
+                    job.append(&s[plain..i], 0.0, f.clone());
+                }
+                let weak = TextFormat { color: c.faint, ..f.clone() };
+                let (a, z) = (i + open, i + open + close);
+                job.append(&s[i..a], 0.0, weak.clone());
+                let colored = TextFormat { color: c.text_color(color).unwrap_or(f.color), ..f.clone() };
+                inline(job, &s[a..z], &colored, c);
+                let end = z + scrap_core::colors::CLOSE.len();
+                job.append(&s[z..end], 0.0, weak);
+                i = end;
+                plain = end;
+                continue;
+            }
+        }
         if let Some((end, parts)) = token(s, i, f, c) {
             if plain < i {
                 job.append(&s[plain..i], 0.0, f.clone());
@@ -333,6 +350,8 @@ struct Renderer {
     skip: usize,
     tables: usize,
     clicked: Option<String>,
+    /// For each open `<span>`: the text colour to restore when it closes.
+    spans_open: Vec<Option<Color32>>,
 }
 
 impl Renderer {
@@ -352,6 +371,28 @@ impl Renderer {
             skip: 0,
             tables: 0,
             clicked: None,
+            spans_open: Vec::new(),
+        }
+    }
+
+    /// Applies a `<span>` or `</span>` tag; false if `html` is something else.
+    fn span_html(&mut self, html: &str) -> bool {
+        let html = html.trim();
+        if html.eq_ignore_ascii_case(scrap_core::colors::CLOSE) {
+            if let Some(previous) = self.spans_open.pop() {
+                self.style.color = previous;
+            }
+            return true;
+        }
+        match scrap_core::colors::span_tag(html) {
+            Some((len, color)) if len == html.len() => {
+                self.spans_open.push(self.style.color);
+                if let Some(color) = color.and_then(|v| self.c.text_color(v)) {
+                    self.style.color = Some(color);
+                }
+                true
+            }
+            _ => false,
         }
     }
 
@@ -376,6 +417,7 @@ impl Renderer {
                     self.spans.push(Span { text: t.to_string(), style });
                 }
             }
+            Event::InlineHtml(t) if self.code.is_none() && self.span_html(&t) => {}
             Event::Html(t) | Event::InlineHtml(t) => match &mut self.code {
                 Some(code) => code.push_str(&t),
                 None => self.push(&t),
@@ -775,6 +817,22 @@ mod tests {
         assert_eq!(video_line(&format!("[A song]({yt})")), Some(yt));
         assert_eq!(video_line(&format!("watch {yt}")), None);
         assert_eq!(video_line("https://example.com"), None);
+    }
+
+    #[test]
+    fn colored_text_in_the_editor() {
+        let src = r#"a <span style="color: red">b **c**</span> d"#;
+        let job = highlight(src, &Visuals::dark(), 14.0, &|_| 0.0);
+        assert_eq!(job.text, src);
+        let red = colors(&Visuals::dark()).red;
+        let at = |needle: &str| {
+            let b = src.find(needle).unwrap();
+            let b = egui::text::ByteIndex(b);
+            job.sections.iter().find(|s| s.byte_range.contains(&b)).unwrap().format.color
+        };
+        assert_eq!(at("b "), red);
+        assert_eq!(at("c*"), red);
+        assert_ne!(at(" d"), red);
     }
 
     #[test]

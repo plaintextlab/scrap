@@ -4,7 +4,8 @@
 //! `SCRAP_DEMO` is a `;`-separated list of: `open:<note path>`, `view:edit|read|split`,
 //! `search:<query>`, `page:trash|settings`, `theme:light|dark`, `move:<path>`,
 //! `delete:<path>`, `links`, `nosidebar`, `expand:<folder>`, `select:<from>-<to>`,
-//! `fmt:bold|italic|heading|list|check|undo|redo`, `addimage:<file>`, `save`.
+//! `fmt:bold|italic|heading|list|check|undo|redo|nocolor|<colour name>`,
+//! `addimage:<file>`, `save`.
 
 use crate::app::{Action, App, Dialog, Page, SearchState, ThemeChoice, View};
 use crate::editor::Op;
@@ -125,7 +126,11 @@ impl App {
                     "check" => Op::Checklist,
                     "undo" => Op::Undo,
                     "redo" => Op::Redo,
-                    _ => return,
+                    "nocolor" => Op::Color(None),
+                    color => match scrap_core::colors::NAMES.iter().find(|n| **n == color) {
+                        Some(name) => Op::Color(Some(name)),
+                        None => return,
+                    },
                 };
                 self.format(op);
             }

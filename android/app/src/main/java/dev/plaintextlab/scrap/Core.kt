@@ -28,5 +28,7 @@ object Core {
     @JvmStatic external fun outgoing(text: String): String
     @JvmStatic external fun search(query: String): String
     @JvmStatic external fun preview(text: String): String
+    /** The note as plain markdown, without colour spans. */
+    @JvmStatic external fun stripColors(text: String): String
     @JvmStatic external fun sync(config: String): String
 }

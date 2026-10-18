@@ -195,6 +195,37 @@ pub fn current() -> ThemeName {
 }
 
 /// The current theme's palette for light or dark mode.
+impl Palette {
+    /// A text colour from a note (`<span style="color: …">`): the theme's own shade for
+    /// the accent names (and their usual CSS aliases), or a `#rgb`/`#rrggbb` value.
+    pub fn text_color(&self, value: &str) -> Option<Color32> {
+        let v = value.trim().to_ascii_lowercase();
+        let named = match v.as_str() {
+            "red" | "crimson" | "darkred" => self.red,
+            "orange" | "darkorange" => self.orange,
+            "yellow" | "gold" => self.yellow,
+            "green" | "lime" | "darkgreen" | "olive" => self.green,
+            "aqua" | "cyan" | "teal" | "turquoise" => self.aqua,
+            "blue" | "navy" | "royalblue" | "dodgerblue" => self.blue,
+            "purple" | "violet" | "magenta" | "fuchsia" | "pink" => self.purple,
+            "gray" | "grey" | "silver" => self.gray,
+            _ => return parse_hex(&v),
+        };
+        Some(named)
+    }
+}
+
+fn parse_hex(v: &str) -> Option<Color32> {
+    let hex = v.strip_prefix('#')?;
+    let digit = |i: usize| u8::from_str_radix(hex.get(i..i + 1)?, 16).ok();
+    let pair = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
+    match hex.len() {
+        3 => Some(Color32::from_rgb(digit(0)? * 17, digit(1)? * 17, digit(2)? * 17)),
+        6 => Some(Color32::from_rgb(pair(0)?, pair(2)?, pair(4)?)),
+        _ => None,
+    }
+}
+
 pub fn palette_for(dark: bool) -> Palette {
     current().palette(dark)
 }

@@ -64,6 +64,7 @@ import kotlinx.coroutines.withContext
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import dev.plaintextlab.scrap.Attachments
+import dev.plaintextlab.scrap.Core
 import dev.plaintextlab.scrap.NoteRef
 import java.io.File
 import dev.plaintextlab.scrap.OutLink
@@ -113,7 +114,8 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
                                     val send = Intent(Intent.ACTION_SEND)
                                         .setType("text/plain")
                                         .putExtra(Intent.EXTRA_SUBJECT, titleOf(rel))
-                                        .putExtra(Intent.EXTRA_TEXT, vm.noteText)
+                                        // Plain markdown: colours are HTML most apps would show as tags.
+                                        .putExtra(Intent.EXTRA_TEXT, Core.stripColors(vm.noteText))
                                     context.startActivity(Intent.createChooser(send, null))
                                 },
                             )
@@ -212,6 +214,8 @@ private fun Reader(vm: VaultViewModel, rel: String, text: String, padding: Paddi
             Attachments.splitImages(Attachments.resolve(markdown, rel, File(vm.vaultPath)))
         }
     }
+    val accents = LocalAccents.current
+    val annotator = remember(accents) { TextColors.annotator(accents) }
     val system = LocalUriHandler.current
     val handler = remember(system) {
         object : UriHandler {
@@ -249,6 +253,7 @@ private fun Reader(vm: VaultViewModel, rel: String, text: String, padding: Paddi
                             codeBackground = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ),
                         imageTransformer = Coil3ImageTransformerImpl,
+                        annotator = annotator,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     // Full width at the image's own aspect ratio.

@@ -67,6 +67,14 @@ class MarkdownHighlight(private val c: ColorScheme, private val g: AccentColors)
                     } else {
                         listMarker.find(line)?.let { addStyle(marker, start, start + it.range.last) }
                     }
+                    // Colour spans first, so links and code inside keep their own colour.
+                    for (m in TextColors.span.findAll(line)) {
+                        val color = TextColors.valueOf(m.groupValues[1])?.let { TextColors.colorOf(it, g) } ?: continue
+                        val (open, inner, close) = listOf(1, 2, 3).map { m.groups[it]!!.range }
+                        addStyle(dim, start + open.first, start + open.last + 1)
+                        addStyle(SpanStyle(color = color), start + inner.first, start + inner.last + 1)
+                        addStyle(dim, start + close.first, start + close.last + 1)
+                    }
                     for ((re, style) in inline) {
                         for (m in re.findAll(line)) addStyle(style, start + m.range.first, start + m.range.last + 1)
                     }

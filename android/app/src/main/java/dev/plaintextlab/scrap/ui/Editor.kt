@@ -7,7 +7,12 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -70,6 +75,7 @@ fun Editor(text: String, onChange: (String) -> Unit, padding: PaddingValues, onA
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var imageMenu by remember { mutableStateOf(false) }
+    var colorMenu by remember { mutableStateOf(false) }
     // Survives the activity being recreated while the camera app is open.
     var cameraFile by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -161,6 +167,36 @@ fun Editor(text: String, onChange: (String) -> Unit, padding: PaddingValues, onA
                     ToolButton(ScrapIcons.Checklist, "Checklist") { update(toggleLinePrefix(value, "- [ ] ")) }
                     ToolButton(ScrapIcons.Link, "Link to note") { update(wrap(value, "[[", "]]")) }
                     ToolButton(ScrapIcons.Code, "Code") { update(wrap(value, "`", "`")) }
+                    Box {
+                        ToolButton(ScrapIcons.Palette, "Text colour") { colorMenu = true }
+                        DropdownMenu(expanded = colorMenu, onDismissRequest = { colorMenu = false }) {
+                            for (name in TextColors.names) {
+                                DropdownMenuItem(
+                                    text = { Text(TextColors.label(name)) },
+                                    leadingIcon = {
+                                        Box(
+                                            Modifier
+                                                .size(20.dp)
+                                                .background(TextColors.colorOf(name, accents) ?: colors.onSurface, CircleShape),
+                                        )
+                                    },
+                                    onClick = {
+                                        colorMenu = false
+                                        update(TextColors.apply(value, name))
+                                    },
+                                )
+                            }
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("No colour") },
+                                leadingIcon = { Icon(Icons.Default.Clear, null) },
+                                onClick = {
+                                    colorMenu = false
+                                    update(TextColors.apply(value, null))
+                                },
+                            )
+                        }
+                    }
                     Box {
                         ToolButton(ScrapIcons.Image, "Add image") { imageMenu = true }
                         DropdownMenu(expanded = imageMenu, onDismissRequest = { imageMenu = false }) {
