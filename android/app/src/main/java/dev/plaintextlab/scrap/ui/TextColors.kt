@@ -60,12 +60,33 @@ object TextColors {
     /**
      * Colours the selection ([name]), or removes its colour (null). A selection that is
      * already coloured, just inside or including its tags, is recoloured rather than wrapped
-     * again. With no selection, an empty coloured span is inserted at the cursor.
+     * again. With no selection, the coloured text around the cursor is recoloured, or else
+     * the cursor's line (after any list, heading or quote marker); on an empty line an empty
+     * coloured span is inserted to type into. Mirrors `format::color` in the desktop app.
      */
     fun apply(v: TextFieldValue, name: String?): TextFieldValue {
         val text = v.text
-        val a = v.selection.min
-        val z = v.selection.max
+        val cursor = v.selection.collapsed
+        var a = v.selection.min
+        var z = v.selection.max
+        if (cursor) {
+            val span = enclosingSpan(text, a)
+            if (span != null && span.first == span.last + 1 && name != null) {
+                // An empty span next to text on the line: drop it and colour the line instead.
+                val openAt = text.lastIndexOf('<', span.first - 1).takeIf { it >= 0 } ?: span.first
+                val cleaned = text.substring(0, openAt) + text.substring(span.first + CLOSE.length)
+                val line = lineText(cleaned, openAt)
+                if (line.first < line.second) return apply(TextFieldValue(cleaned, TextRange(openAt)), name)
+            }
+            if (span != null) {
+                a = span.first
+                z = span.last + 1
+            } else {
+                val line = lineText(text, a)
+                a = line.first
+                z = line.second
+            }
+        }
         val selected = text.substring(a, z)
         var outerA = a
         var outerZ = z
@@ -89,7 +110,44 @@ object TextColors {
         val close = if (name != null) CLOSE else ""
         val out = text.substring(0, outerA) + open + inner + close + text.substring(outerZ)
         val first = outerA + open.length
-        return TextFieldValue(out, TextRange(first, first + inner.length))
+        val last = first + inner.length
+        // A selection stays selected; a cursor goes to the end of the coloured text.
+        return TextFieldValue(out, if (cursor) TextRange(last) else TextRange(first, last))
+    }
+
+    /** The text inside the colour span the cursor is in (or right next to), on its line. */
+    private fun enclosingSpan(text: String, at: Int): IntRange? {
+        val lineStart = text.lastIndexOf('\n', at - 1) + 1
+        val lineEnd = text.indexOf('\n', at).let { if (it < 0) text.length else it }
+        var best: IntRange? = null
+        var i = text.indexOf('<', lineStart)
+        while (i in lineStart until lineEnd) {
+            val tag = openTag.matchAt(text, i)
+            if (tag != null) {
+                val inner = i + tag.value.length
+                val close = text.indexOf(CLOSE, inner, ignoreCase = true)
+                if (close in inner..lineEnd && i <= at && at <= close + CLOSE.length) best = inner until close
+            }
+            i = text.indexOf('<', i + 1)
+            if (i < 0) break
+        }
+        return best
+    }
+
+    private val lineMarker = Regex("""^(#{1,6} |[-*] \[[ xX]] |[-*+] |> |\d{1,9}[.)] )""")
+
+    /** The cursor's line without its marker and surrounding spaces, or an empty range at the cursor. */
+    private fun lineText(text: String, at: Int): Pair<Int, Int> {
+        val lineStart = text.lastIndexOf('\n', at - 1) + 1
+        val lineEnd = text.indexOf('\n', at).let { if (it < 0) text.length else it }
+        val line = text.substring(lineStart, lineEnd).trimEnd()
+        val body = line.trimStart()
+        var skip = line.length - body.length
+        skip += lineMarker.find(body)?.value?.length ?: 0
+        val rest = line.substring(skip)
+        val a = lineStart + skip + (rest.length - rest.trimStart().length)
+        val z = lineStart + line.length
+        return if (a >= z) at to at else a to z
     }
 
     /** Colours the text between `<span style="color: …">` and `</span>` in the reader. */

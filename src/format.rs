@@ -33,11 +33,31 @@ pub fn wrap(text: &str, sel: (usize, usize), before: &str, after: &str) -> Edit 
 
 /// Colours the selection (`Some(name)`), or removes its colour (`None`). A selection that
 /// is already coloured, either just inside or including its `<span>` tags, is recoloured
-/// rather than wrapped again. With no selection, an empty coloured span is inserted.
+/// rather than wrapped again. With no selection, the coloured text around the cursor is
+/// recoloured, or else the cursor's line (after any list, heading or quote marker); on an
+/// empty line an empty coloured span is inserted to type into.
 pub fn color(text: &str, sel: (usize, usize), name: Option<&str>) -> Edit {
     use scrap_core::colors;
     let (start, end) = (sel.0.min(sel.1), sel.0.max(sel.1));
-    let (a, z) = (byte(text, start), byte(text, end));
+    let cursor = start == end;
+    let (a, z) = if cursor {
+        let at = byte(text, start);
+        let span = enclosing_span(text, at);
+        // An empty span (inserted earlier on an empty line, say) next to text on the line:
+        // drop it and colour the line instead.
+        if let Some((inner, _)) = span.filter(|&(ia, iz)| ia == iz && name.is_some()) {
+            let open_at = text[..inner].rfind('<').unwrap_or(inner);
+            let cleaned = format!("{}{}", &text[..open_at], &text[inner + colors::CLOSE.len()..]);
+            let cur = chars(&text[..open_at]);
+            let (la, lz) = line_text(&cleaned, open_at);
+            if la < lz {
+                return color(&cleaned, (cur, cur), name);
+            }
+        }
+        span.unwrap_or_else(|| line_text(text, at))
+    } else {
+        (byte(text, start), byte(text, end))
+    };
     // The span being replaced (byte range) and the text it holds.
     let selected = &text[a..z];
     let whole = colors::open_tag(selected)
@@ -60,7 +80,59 @@ pub fn color(text: &str, sel: (usize, usize), name: Option<&str>) -> Edit {
     };
     let out = format!("{}{open}{inner}{close}{}", &text[..outer_a], &text[outer_z..]);
     let first = chars(&text[..outer_a]) + chars(&open);
-    Edit { text: out, selection: (first, first + chars(inner)) }
+    let last = first + chars(inner);
+    // A selection stays selected; a cursor goes to the end of the coloured text.
+    Edit { text: out, selection: if cursor { (last, last) } else { (first, last) } }
+}
+
+/// The text inside the colour span the cursor (byte `at`) is in, on its line.
+fn enclosing_span(text: &str, at: usize) -> Option<(usize, usize)> {
+    use scrap_core::colors;
+    let line_start = text[..at].rfind('\n').map_or(0, |i| i + 1);
+    let line_end = text[at..].find('\n').map_or(text.len(), |i| at + i);
+    let line = &text[line_start..line_end];
+    let mut best = None;
+    for (i, _) in line.match_indices('<') {
+        let Some((len, _)) = colors::open_tag(&line[i..]) else { continue };
+        let inner = line_start + i + len;
+        let Some(close) = text[inner..line_end].find(colors::CLOSE) else { continue };
+        // Inside the tags, or right before or after them, counts as in the span.
+        let outer_end = inner + close + colors::CLOSE.len();
+        if line_start + i <= at && at <= outer_end {
+            best = Some((inner, inner + close));
+        }
+    }
+    best
+}
+
+/// The cursor's line without its list, heading or quote marker and surrounding spaces;
+/// an empty range at the cursor if that leaves nothing.
+fn line_text(text: &str, at: usize) -> (usize, usize) {
+    let line_start = text[..at].rfind('\n').map_or(0, |i| i + 1);
+    let line_end = text[at..].find('\n').map_or(text.len(), |i| at + i);
+    let line = text[line_start..line_end].trim_end();
+    let body = line.trim_start();
+    let mut skip = line.len() - body.len();
+    let hashes = body.bytes().take_while(|&b| b == b'#').count();
+    let markers = ["- [ ] ", "- [x] ", "- [X] ", "* [ ] ", "* [x] ", "- ", "* ", "+ ", "> "];
+    if (1..=6).contains(&hashes) && body[hashes..].starts_with(' ') {
+        skip += hashes + 1;
+    } else if let Some(m) = markers.iter().find(|m| body.starts_with(**m)) {
+        skip += m.len();
+    } else {
+        let digits = body.bytes().take_while(u8::is_ascii_digit).count();
+        if (1..10).contains(&digits) && (body[digits..].starts_with(". ") || body[digits..].starts_with(") ")) {
+            skip += digits + 2;
+        }
+    }
+    let rest = &line[skip..];
+    let a = line_start + skip + (rest.len() - rest.trim_start().len());
+    let z = line_start + line.len();
+    if a >= z {
+        (at, at)
+    } else {
+        (a, z)
+    }
 }
 
 /// Adds `prefix` (such as "- " or "# ") to every line the selection touches, or removes
@@ -189,9 +261,28 @@ mod tests {
         // Remove.
         assert_eq!(color(&red.text, red.selection, None).text, "say hi now");
         assert_eq!(color("plain", (0, 5), None).text, "plain");
-        // At a cursor: an empty span with the cursor inside.
-        let e = color("ab", (1, 1), Some("blue"));
-        assert_eq!(e.text, format!("a{blue}</span>b"));
-        assert_eq!(e.selection, (1 + blue.len(), 1 + blue.len()));
+        // At a cursor: the line is coloured, after any marker, and the cursor ends up after it.
+        let e = color("one\n- two words \nthree", (9, 9), Some("blue"));
+        assert_eq!(e.text, format!("one\n- {blue}two words</span> \nthree"));
+        let end = e.text.find("</span>").unwrap();
+        assert_eq!(e.selection, (end, end));
+        assert_eq!(color("## Title", (3, 3), Some("red")).text, r#"## <span style="color: red">Title</span>"#);
+        // In (or just after) coloured text: that span is recoloured or uncoloured.
+        let coloured = format!("say {blue}hi</span> now");
+        let inside = 4 + blue.len() + 1;
+        assert_eq!(color(&coloured, (inside, inside), Some("red")).text, r#"say <span style="color: red">hi</span> now"#);
+        let after = coloured.find(" now").unwrap();
+        assert_eq!(color(&coloured, (after, after), None).text, "say hi now");
+        // An empty span (from an empty line) can be removed too.
+        let empty = format!("x{blue}</span>");
+        assert_eq!(color(&empty, (1, 1), None).text, "x");
+        // Colouring there replaces the empty span by colouring the line.
+        let typed = r#"Call now.<span style="color: red"></span>"#;
+        let end = typed.chars().count();
+        assert_eq!(color(typed, (end, end), Some("red")).text, r#"<span style="color: red">Call now.</span>"#);
+        // On an empty line: an empty span with the cursor inside, to type into.
+        let e = color("a\n\nb", (2, 2), Some("blue"));
+        assert_eq!(e.text, format!("a\n{blue}</span>\nb"));
+        assert_eq!(e.selection, (2 + blue.len(), 2 + blue.len()));
     }
 }
