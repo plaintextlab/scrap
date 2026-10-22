@@ -239,7 +239,15 @@ jobs:
         env:
           SCRAP_VERSION: ${{ needs.version.outputs.version }}
           SCRAP_VERSION_CODE: ${{ github.run_number }}
-        run: gradle assembleRelease --no-daemon
+        # Compile errors are also posted as annotations, which GitHub shows without signing in.
+        run: |
+          set +e
+          gradle assembleRelease --no-daemon 2>&1 | tee build.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            grep -E '^e: |error:|ERROR:|What went wrong' -A2 build.log | head -40 | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+          exit "$status"
       - name: Signing certificate
         # Must stay the same across releases for updates to install over the old app.
         run: |

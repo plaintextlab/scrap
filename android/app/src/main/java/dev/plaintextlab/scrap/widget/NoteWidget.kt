@@ -103,11 +103,10 @@ class NoteWidget : GlanceAppWidget() {
 }
 
 /** The app's colour theme, light and dark as its setting says. */
-private fun themeColors(context: Context): ColorProviders {
-    val settings = SettingsStore(context).load()
+private fun themeColors(context: Context) = SettingsStore(context).load().let { settings ->
     val light = scheme(palette(settings.colorTheme, false), false)
     val dark = scheme(palette(settings.colorTheme, true), true)
-    return when (settings.theme) {
+    when (settings.theme) {
         ThemeMode.System -> ColorProviders(light = light, dark = dark)
         ThemeMode.Light -> ColorProviders(light)
         ThemeMode.Dark -> ColorProviders(dark)
