@@ -155,7 +155,10 @@ private sealed interface Shown {
 private fun shownLines(text: String): List<Shown> {
     val out = mutableListOf<Shown>()
     var fence = false
-    text.split('\n').forEachIndexed { i, raw ->
+    val all = text.split('\n')
+    val properties = Lists.frontMatterLines(all)
+    all.forEachIndexed { i, raw ->
+        if (i < properties) return@forEachIndexed
         val t = raw.trimStart()
         if (t.startsWith("```") || t.startsWith("~~~")) {
             fence = !fence

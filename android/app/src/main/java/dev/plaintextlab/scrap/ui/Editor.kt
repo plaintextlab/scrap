@@ -66,7 +66,13 @@ import kotlinx.coroutines.delay
  * [onAddImage] stores a picked image and returns the markdown that embeds it.
  */
 @Composable
-fun Editor(text: String, onChange: (String) -> Unit, padding: PaddingValues, onAddImage: suspend (Uri) -> String?) {
+fun Editor(
+    text: String,
+    onChange: (String) -> Unit,
+    padding: PaddingValues,
+    onAddImage: suspend (Uri) -> String?,
+    onAttachFile: suspend (Uri) -> String?,
+) {
     val colors = MaterialTheme.colorScheme
     val accents = LocalAccents.current
     val highlight = remember(colors, accents) { MarkdownHighlight(colors, accents) }
@@ -77,6 +83,8 @@ fun Editor(text: String, onChange: (String) -> Unit, padding: PaddingValues, onA
     val scope = rememberCoroutineScope()
     var imageMenu by remember { mutableStateOf(false) }
     var colorMenu by remember { mutableStateOf(false) }
+    var headingMenu by remember { mutableStateOf(false) }
+    var formatMenu by remember { mutableStateOf(false) }
     // Survives the activity being recreated while the camera app is open.
     var cameraFile by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -117,6 +125,19 @@ fun Editor(text: String, onChange: (String) -> Unit, padding: PaddingValues, onA
     }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) insertImage(uri)
+    }
+    // Any file: copied into the vault and linked, opening in its own app from the note.
+    val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val link = onAttachFile(uri)
+                if (link == null) {
+                    Toast.makeText(context, "Couldn't attach that file", Toast.LENGTH_SHORT).show()
+                } else {
+                    update(insertBlock(value, link))
+                }
+            }
+        }
     }
     val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
         val file = cameraFile?.let { File(it) } ?: return@rememberLauncherForActivityResult
@@ -171,13 +192,50 @@ fun Editor(text: String, onChange: (String) -> Unit, padding: PaddingValues, onA
                         history.redo(value)?.let { update(it, record = false) }
                     }
                     VerticalDivider(Modifier.padding(vertical = 12.dp).height(24.dp))
-                    ToolButton(ScrapIcons.Heading, "Heading") { update(toggleLinePrefix(value, "# ")) }
+                    Box {
+                        ToolButton(ScrapIcons.Heading, "Heading") { headingMenu = true }
+                        DropdownMenu(expanded = headingMenu, onDismissRequest = { headingMenu = false }) {
+                            for (level in 1..6) {
+                                DropdownMenuItem(
+                                    text = { Text("Heading $level", style = headingStyle(level)) },
+                                    onClick = {
+                                        headingMenu = false
+                                        update(heading(value, level))
+                                    },
+                                )
+                            }
+                        }
+                    }
                     ToolButton(ScrapIcons.Bold, "Bold") { update(wrap(value, "**", "**")) }
                     ToolButton(ScrapIcons.Italic, "Italic") { update(wrap(value, "*", "*")) }
                     ToolButton(ScrapIcons.BulletList, "List") { update(toggleLinePrefix(value, "- ")) }
                     ToolButton(ScrapIcons.Checklist, "Checklist") { update(toggleLinePrefix(value, "- [ ] ")) }
                     ToolButton(ScrapIcons.Link, "Link to note") { update(wrap(value, "[[", "]]")) }
                     ToolButton(ScrapIcons.Code, "Code") { update(wrap(value, "`", "`")) }
+                    Box {
+                        ToolButton(ScrapIcons.Format, "More formatting") { formatMenu = true }
+                        DropdownMenu(expanded = formatMenu, onDismissRequest = { formatMenu = false }) {
+                            val more: List<Pair<String, () -> TextFieldValue>> = listOf(
+                                "Strikethrough" to { wrap(value, "~~", "~~") },
+                                "Numbered list" to { toggleLinePrefix(value, "1. ") },
+                                "Quote" to { toggleLinePrefix(value, "> ") },
+                                "Table" to { insertBlock(value, TABLE) },
+                                "Divider line" to { insertBlock(value, "---") },
+                                "Code block" to { wrap(value, "```\n", "\n```") },
+                                "Web link" to { link(value) },
+                                "Footnote" to { footnote(value) },
+                            )
+                            for ((label, edit) in more) {
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        formatMenu = false
+                                        update(edit())
+                                    },
+                                )
+                            }
+                        }
+                    }
                     Box {
                         ToolButton(ScrapIcons.Palette, "Text colour") { colorMenu = true }
                         DropdownMenu(expanded = colorMenu, onDismissRequest = { colorMenu = false }) {
@@ -227,6 +285,14 @@ fun Editor(text: String, onChange: (String) -> Unit, padding: PaddingValues, onA
                                     openCamera()
                                 },
                             )
+                            DropdownMenuItem(
+                                text = { Text("Attach a file") },
+                                leadingIcon = { Icon(ScrapIcons.Attach, null) },
+                                onClick = {
+                                    imageMenu = false
+                                    pickFile.launch(arrayOf("*/*"))
+                                },
+                            )
                         }
                     }
                 }
@@ -245,6 +311,56 @@ private fun ToolButton(icon: ImageVector, label: String, enabled: Boolean = true
     IconButton(onClick = onClick, enabled = enabled) {
         Icon(icon, contentDescription = label)
     }
+}
+
+@Composable
+private fun headingStyle(level: Int) = with(MaterialTheme.typography) {
+    when (level) {
+        1 -> titleLarge
+        2 -> titleMedium
+        3 -> titleSmall
+        else -> bodyMedium
+    }
+}
+
+/** A 3-column table with a header row and one empty row. */
+internal const val TABLE = "| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n|  |  |  |"
+
+/** Makes the cursor's line a heading of [level], replacing another level; the same level goes back to text. */
+internal fun heading(v: TextFieldValue, level: Int): TextFieldValue {
+    val lineStart = v.text.lastIndexOf('\n', v.selection.min - 1) + 1
+    val lineEnd = v.text.indexOf('\n', v.selection.min).let { if (it < 0) v.text.length else it }
+    val line = v.text.substring(lineStart, lineEnd)
+    val old = Regex("""^#{1,6} """).find(line)?.value.orEmpty()
+    val marker = "#".repeat(level) + " "
+    val replaced = if (old == marker) line.removePrefix(old) else marker + line.removePrefix(old)
+    val text = v.text.substring(0, lineStart) + replaced + v.text.substring(lineEnd)
+    return TextFieldValue(text, TextRange(lineStart + replaced.length))
+}
+
+/** `[text](https://)` around the selection, with the address selected to type over. */
+internal fun link(v: TextFieldValue): TextFieldValue {
+    val a = v.selection.min
+    val z = v.selection.max
+    val selected = v.text.substring(a, z)
+    val url = "https://"
+    val text = v.text.substring(0, a) + "[$selected]($url)" + v.text.substring(z)
+    val start = a + selected.length + 3
+    return TextFieldValue(text, TextRange(start, start + url.length))
+}
+
+/** A footnote: `[^n]` at the cursor and its `[^n]: ` line at the end, ready to write. */
+internal fun footnote(v: TextFieldValue): TextFieldValue {
+    val n = generateSequence(1) { it + 1 }.first { !v.text.contains("[^$it]") }
+    val at = v.selection.max
+    val head = v.text.substring(0, at) + "[^$n]" + v.text.substring(at)
+    val sep = when {
+        head.endsWith("\n\n") -> ""
+        head.endsWith("\n") -> "\n"
+        else -> "\n\n"
+    }
+    val text = "$head$sep[^$n]: "
+    return TextFieldValue(text, TextRange(text.length))
 }
 
 /** Wraps the selection (or inserts an empty pair at the cursor). */

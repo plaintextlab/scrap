@@ -181,6 +181,62 @@ pub fn toggle_line_prefix(text: &str, sel: (usize, usize), prefix: &str) -> Edit
     Edit { text: out, selection: (clamp(start, shift_start), clamp(end, shift_end)) }
 }
 
+/// Makes the selected lines headings of `level` (1-6), replacing any other level; lines
+/// already at that level go back to plain text.
+pub fn heading(text: &str, sel: (usize, usize), level: usize) -> Edit {
+    let (start, end) = (sel.0.min(sel.1), sel.0.max(sel.1));
+    let (a, z) = (byte(text, start), byte(text, end));
+    let first = text[..a].rfind('\n').map_or(0, |i| i + 1);
+    let last_end = text[z..].find('\n').map_or(text.len(), |i| z + i);
+    let marker = format!("{} ", "#".repeat(level));
+    let lines: Vec<&str> = text[first..last_end].split('\n').collect();
+    let all = lines.iter().all(|l| l.starts_with(&marker));
+    let out_lines: Vec<String> = lines
+        .iter()
+        .map(|l| {
+            let hashes = l.bytes().take_while(|&b| b == b'#').count();
+            let bare = if (1..=6).contains(&hashes) && l[hashes..].starts_with(' ') { &l[hashes + 1..] } else { l };
+            if all { bare.to_string() } else { format!("{marker}{bare}") }
+        })
+        .collect();
+    let block = out_lines.join("\n");
+    let out = format!("{}{block}{}", &text[..first], &text[last_end..]);
+    // Cursor at the end of the changed line(s).
+    let at = chars(&text[..first]) + chars(&block);
+    Edit { text: out, selection: if start == end { (at, at) } else { (chars(&text[..first]), at) } }
+}
+
+/// A markdown link around the selection: `[text](https://)`, with the address selected
+/// to type over. A selected address becomes the link's target instead.
+pub fn link(text: &str, sel: (usize, usize)) -> Edit {
+    let (start, end) = (sel.0.min(sel.1), sel.0.max(sel.1));
+    let (a, z) = (byte(text, start), byte(text, end));
+    let selected = &text[a..z];
+    if selected.contains("://") && !selected.contains(char::is_whitespace) {
+        let out = format!("{}[]({selected}){}", &text[..a], &text[z..]);
+        return Edit { text: out, selection: (start + 1, start + 1) };
+    }
+    let url = "https://";
+    let out = format!("{}[{selected}]({url}){}", &text[..a], &text[z..]);
+    let url_start = start + 1 + chars(selected) + 2;
+    Edit { text: out, selection: (url_start, url_start + chars(url)) }
+}
+
+/// A footnote: `[^n]` at the cursor and its `[^n]: ` line at the end, ready to write.
+pub fn footnote(text: &str, sel: (usize, usize)) -> Edit {
+    let at = byte(text, sel.0.max(sel.1));
+    let n = (1..).find(|n| !text.contains(&format!("[^{n}]"))).unwrap_or(1);
+    let mark = format!("[^{n}]");
+    let head = format!("{}{mark}{}", &text[..at], &text[at..]);
+    let sep = if head.ends_with("\n\n") { "" } else if head.ends_with('\n') { "\n" } else { "\n\n" };
+    let out = format!("{head}{sep}{mark}: ");
+    let end = chars(&out);
+    Edit { text: out, selection: (end, end) }
+}
+
+/// A 3-column table with a header row and one empty row, the first header cell selected.
+pub const TABLE: &str = "| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n|  |  |  |";
+
 /// Inserts `block` as a paragraph of its own (blank lines around it, so markdown
 /// doesn't fold it into a neighbouring list item) and puts the cursor after it.
 pub fn insert_block(text: &str, cursor: usize, block: &str) -> Edit {
@@ -243,6 +299,21 @@ mod tests {
         assert_eq!(e.selection.0, e.text.chars().count());
         assert_eq!(insert_block("a\n\nb", 3, "X").text, "a\n\nX\n\nb");
         assert_eq!(insert_block("", 0, "X").text, "X\n\n");
+    }
+
+    #[test]
+    fn headings_links_and_footnotes() {
+        assert_eq!(heading("Title", (2, 2), 2).text, "## Title");
+        assert_eq!(heading("# Title", (2, 2), 3).text, "### Title");
+        assert_eq!(heading("### Title", (2, 2), 3).text, "Title");
+        assert_eq!(heading("a\nb", (0, 3), 1).text, "# a\n# b");
+        let e = link("see docs here", (4, 8));
+        assert_eq!(e.text, "see [docs](https://) here");
+        assert_eq!(e.text.chars().skip(e.selection.0).take(e.selection.1 - e.selection.0).collect::<String>(), "https://");
+        assert_eq!(link("https://x.y", (0, 11)).text, "[](https://x.y)");
+        let e = footnote("Claim.", (6, 6));
+        assert_eq!(e.text, "Claim.[^1]\n\n[^1]: ");
+        assert_eq!(footnote(&e.text, (6, 6)).text, "Claim.[^2][^1]\n\n[^1]: \n\n[^2]: ");
     }
 
     #[test]

@@ -82,6 +82,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
     var actionsFor by remember { mutableStateOf<String?>(null) }
     var deleting by remember { mutableStateOf<String?>(null) }
     var moving by remember { mutableStateOf<String?>(null) }
+    var copying by remember { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }
     val sort = vm.settings.sort
 
@@ -90,7 +91,7 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
         when (sort) {
             SortOrder.Name -> list.sortedBy { it.name.lowercase() }
             SortOrder.Recent -> list.sortedByDescending { it.modified }
-        }
+        }.sortedByDescending { it.pinned }
     }
 
     Scaffold(
@@ -276,6 +277,33 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
                     moving = rel
                 }),
             )
+            if (rel.endsWith(".md")) {
+                val pinned = vm.notes.firstOrNull { it.rel == rel }?.pinned == true
+                ListItem(
+                    headlineContent = { Text(if (pinned) "Unpin" else "Pin to top") },
+                    leadingContent = { Icon(ScrapIcons.Pin, null, tint = LocalAccents.current.orange) },
+                    modifier = Modifier.combinedClickable(onClick = {
+                        actionsFor = null
+                        vm.togglePin(rel)
+                    }),
+                )
+                ListItem(
+                    headlineContent = { Text("Duplicate") },
+                    leadingContent = { Icon(ScrapIcons.Copy, null) },
+                    modifier = Modifier.combinedClickable(onClick = {
+                        actionsFor = null
+                        vm.duplicate(rel)
+                    }),
+                )
+                ListItem(
+                    headlineContent = { Text("Copy to…") },
+                    leadingContent = { Icon(ScrapIcons.Copy, null, tint = LocalAccents.current.orange) },
+                    modifier = Modifier.combinedClickable(onClick = {
+                        actionsFor = null
+                        copying = rel
+                    }),
+                )
+            }
             ListItem(
                 headlineContent = { Text("Delete") },
                 leadingContent = { Icon(Icons.Default.Delete, null, tint = LocalAccents.current.red) },
@@ -296,6 +324,13 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
                 is NameDialog.NewFolder -> vm.createFolder(which.parent, name)
                 is NameDialog.Rename -> vm.rename(which.rel, name)
             }
+        }
+    }
+
+    copying?.let { rel ->
+        MoveDialog(rel, isFolder = false, folders = vm.folders, onDismiss = { copying = null }, copy = true) { dest ->
+            copying = null
+            vm.copyTo(rel, dest)
         }
     }
 
@@ -331,7 +366,15 @@ private fun NoteRow(note: NoteRef, modifier: Modifier) {
         } else {
             null
         },
-        leadingContent = { Icon(ScrapIcons.Note, contentDescription = null, tint = LocalAccents.current.blue) },
+        leadingContent = {
+            val accents = LocalAccents.current
+            val tint = note.color?.let { TextColors.colorOf(it, accents) }
+            Icon(
+                if (note.pinned) ScrapIcons.Pin else ScrapIcons.Note,
+                contentDescription = if (note.pinned) "Pinned" else null,
+                tint = tint ?: if (note.pinned) accents.orange else accents.blue,
+            )
+        },
         modifier = modifier,
     )
 }

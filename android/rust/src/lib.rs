@@ -6,7 +6,9 @@
 use jni::objects::{JClass, JString};
 use jni::sys::jstring;
 use jni::JNIEnv;
+use scrap_core::attachments;
 use scrap_core::colors;
+use scrap_core::meta;
 use scrap_core::links::{wikilinks_to_md, LinkStyle};
 use scrap_core::vault::{self, Vault};
 use serde_json::json;
@@ -88,7 +90,10 @@ export!(Java_dev_plaintextlab_scrap_Core_list() {
     with_vault(|v| {
         let mut folders = Vec::new();
         collect_folders(&v.tree, &mut folders);
-        let notes: Vec<_> = v.notes.iter().map(|n| json!({ "rel": n.rel, "name": n.name, "modified": n.modified }))
+        let notes: Vec<_> = v
+            .notes
+            .iter()
+            .map(|n| json!({ "rel": n.rel, "name": n.name, "modified": n.modified, "pinned": n.pinned(), "color": n.color() }))
             .collect();
         Ok(json!({ "folders": folders, "notes": notes }).to_string())
     })
@@ -217,6 +222,58 @@ fn guard_spans(md: &str) -> String {
     }
     out
 }
+
+// A copy of a note next to it ("<name> copy"); returns its path.
+export!(Java_dev_plaintextlab_scrap_Core_duplicate(rel) {
+    writing_vault(|v| v.duplicate(&rel).map_err(io))
+});
+
+// A copy of a note in another folder; returns its path.
+export!(Java_dev_plaintextlab_scrap_Core_copyTo(rel, folder) {
+    writing_vault(|v| v.copy_to(&rel, &folder).map_err(io))
+});
+
+// A note's properties: {"pinned", "color", "tags" (all), "frontTags" (editable ones)}.
+export!(Java_dev_plaintextlab_scrap_Core_noteMeta(text) {
+    Ok(json!({
+        "pinned": meta::pinned(&text),
+        "color": meta::color(&text),
+        "tags": meta::tags(&text),
+        "frontTags": meta::front_tags(&text),
+    })
+    .to_string())
+});
+
+// The note's text with `pinned` set ("true") or removed (anything else).
+export!(Java_dev_plaintextlab_scrap_Core_setPinned(text, pinned) {
+    Ok(meta::set_pinned(&text, pinned == "true"))
+});
+
+// The note's text with its background colour set, or removed ("").
+export!(Java_dev_plaintextlab_scrap_Core_setColor(text, color) {
+    Ok(meta::set_color(&text, Some(color.as_str()).filter(|c| !c.is_empty())))
+});
+
+// The note's text with its front matter tags replaced; `tags` is comma-separated.
+export!(Java_dev_plaintextlab_scrap_Core_setTags(text, tags) {
+    let tags: Vec<String> = tags.split([',', ' ']).map(str::trim).filter(|t| !t.is_empty()).map(String::from).collect();
+    Ok(meta::set_tags(&text, &tags))
+});
+
+// The note as plain text, for exporting as .txt.
+export!(Java_dev_plaintextlab_scrap_Core_plainText(text) {
+    Ok(meta::plain_text(&text))
+});
+
+// Where an attached file called `name` goes in the vault (a free path in .attachments).
+export!(Java_dev_plaintextlab_scrap_Core_attachmentPath(name) {
+    with_vault(|v| attachments::free_path_for(&v.root, &name).map_err(io))
+});
+
+// The markdown link from the note at `rel` to the attached file at `path`.
+export!(Java_dev_plaintextlab_scrap_Core_fileLink(rel, path) {
+    Ok(attachments::file_link(&rel, &path))
+});
 
 // The note as plain markdown, without colour spans, for sharing.
 export!(Java_dev_plaintextlab_scrap_Core_stripColors(text) {

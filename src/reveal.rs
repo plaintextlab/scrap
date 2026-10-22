@@ -14,6 +14,22 @@ pub fn reveal(path: &Path) -> io::Result<()> {
     spawn(&path)
 }
 
+/// Opens a file in the app the system uses for it (a PDF in the PDF viewer, …).
+pub fn open_file(path: &Path) -> io::Result<()> {
+    let path = native(path);
+    if !path.is_file() {
+        return Err(io::Error::new(io::ErrorKind::NotFound, format!("{} doesn't exist", path.display())));
+    }
+    let program = if cfg!(windows) {
+        "explorer.exe"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    Command::new(program).arg(&path).spawn().map(drop)
+}
+
 /// Vault paths join relative paths written with `/`; Explorer only understands `\`.
 fn native(path: &Path) -> PathBuf {
     if cfg!(windows) {

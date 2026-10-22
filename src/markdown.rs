@@ -70,8 +70,17 @@ pub fn highlight(text: &str, visuals: &Visuals, size: f32, image_room: &dyn Fn(&
     let base = prop(size, c.text);
     let mut job = LayoutJob::default();
     let mut in_fence = false;
+    // The note's properties (front matter) stay in the background.
+    let front_matter = text.len() - scrap_core::meta::body(text).len();
+    let mut offset = 0;
 
     for line in text.split_inclusive('\n') {
+        let at = offset;
+        offset += line.len();
+        if at < front_matter {
+            job.append(line, 0.0, prop(size * 0.85, c.faint));
+            continue;
+        }
         let trimmed = line.trim_start();
         let indent = line.len() - trimmed.len();
 

@@ -132,7 +132,10 @@ pub(crate) enum Dialog {
     NewFolder { parent: String, name: String },
     Rename { rel: String, name: String },
     Delete { rel: String },
-    Move { rel: String },
+    /// Picks a folder to move `rel` to, or with `copy`, to put a copy in.
+    Move { rel: String, copy: bool },
+    /// The note's tags, comma-separated.
+    Tags { rel: String, text: String },
     Remote { url: String },
     Clone { url: String, parent: Option<PathBuf> },
     EmptyTrash,
@@ -173,6 +176,18 @@ pub(crate) enum Action {
     Format(editor::Op),
     /// Add images to the open note; None asks with a file dialog.
     AddImages(Option<Vec<PathBuf>>),
+    /// Attach files of any kind to the open note as links (images are shown); None asks.
+    AttachFiles(Option<Vec<PathBuf>>),
+    CopyTo(String),
+    Duplicate(String),
+    TogglePin(String),
+    /// A note's background colour (a name from `scrap_core::colors::NAMES`), or none.
+    SetColor(String, Option<&'static str>),
+    EditTags(String),
+    /// Saves a note to a file chosen by the user: markdown, or plain text (`true`).
+    Export(String, bool),
+    /// Opens search with this query (a `#tag`, say).
+    SearchFor(String),
     CopyNote,
     Reveal(String),
     ToggleFolder(String),
@@ -556,6 +571,17 @@ impl App {
             self.ctx.open_url(egui::OpenUrl::new_tab(url));
             return;
         }
+        // A link to a file in the vault that isn't a note (an attachment): open it.
+        if let (Some(v), Some(n)) = (&self.vault, &self.note) {
+            if let Some(file) = scrap_core::attachments::resolve(&n.rel, url).map(|r| v.path(&r)) {
+                if file.is_file() && file.extension().is_none_or(|e| e != "md") {
+                    if let Err(e) = crate::reveal::open_file(&file) {
+                        self.error(format!("Couldn't open {}: {e}", file.display()));
+                    }
+                    return;
+                }
+            }
+        }
         let decoded = url.replace("%20", " ");
         let path = decoded.split('#').next().unwrap_or("").trim_start_matches("./");
         if path.is_empty() {
@@ -628,7 +654,40 @@ impl App {
                 self.dialog = Some(Dialog::Rename { rel, name });
             }
             Action::Delete(rel) => self.dialog = Some(Dialog::Delete { rel }),
-            Action::Move(rel) => self.dialog = Some(Dialog::Move { rel }),
+            Action::Move(rel) => self.dialog = Some(Dialog::Move { rel, copy: false }),
+            Action::CopyTo(rel) => self.dialog = Some(Dialog::Move { rel, copy: true }),
+            Action::Duplicate(rel) => {
+                self.save_now();
+                let Some(v) = &mut self.vault else { return };
+                match v.duplicate(&rel) {
+                    Ok(new_rel) => {
+                        self.unsynced = true;
+                        self.open(&new_rel, true);
+                        self.info(format!("Duplicated as {}", vault::stem(&new_rel)));
+                    }
+                    Err(e) => self.error(format!("Could not duplicate: {e}")),
+                }
+            }
+            Action::TogglePin(rel) => {
+                let pinned = self.note_text(&rel).is_some_and(|t| scrap_core::meta::pinned(&t));
+                self.update_note(&rel, |t| scrap_core::meta::set_pinned(t, !pinned));
+                self.info(if pinned { "Unpinned" } else { "Pinned to the top" });
+            }
+            Action::SetColor(rel, color) => self.update_note(&rel, |t| scrap_core::meta::set_color(t, color)),
+            Action::EditTags(rel) => {
+                let tags = self.note_text(&rel).map(|t| scrap_core::meta::front_tags(&t)).unwrap_or_default();
+                self.dialog = Some(Dialog::Tags { rel, text: tags.join(", ") });
+            }
+            Action::Export(rel, txt) => self.export(&rel, txt),
+            Action::SearchFor(query) => {
+                self.search = Some(SearchState { query, selected: 0 });
+            }
+            Action::AttachFiles(paths) => {
+                let paths = paths.or_else(|| rfd::FileDialog::new().set_title("Attach files").pick_files());
+                if let Some(paths) = paths {
+                    self.attach_files(&paths);
+                }
+            }
             Action::MoveTo(rel, folder) => self.move_to(&rel, &folder),
             Action::Restore(name) => {
                 let Some(v) = &mut self.vault else { return };
@@ -762,6 +821,87 @@ impl App {
         }
     }
 
+    /// A note's current text: the editor's for the open note, else the file's.
+    pub(crate) fn note_text(&self, rel: &str) -> Option<String> {
+        match &self.note {
+            Some(n) if n.rel == rel => Some(n.text.clone()),
+            _ => self.vault.as_ref()?.read(rel).ok(),
+        }
+    }
+
+    /// Changes a note's text with `change` (its properties, say) and saves it.
+    pub(crate) fn update_note(&mut self, rel: &str, change: impl Fn(&str) -> String) {
+        if let Some(n) = self.note.as_mut().filter(|n| n.rel == rel) {
+            n.text = change(&n.text);
+            self.save_now();
+            return;
+        }
+        let Some(v) = &mut self.vault else { return };
+        let result = v.read(rel).and_then(|text| v.save(rel, &change(&text)));
+        match result {
+            Ok(()) => self.unsynced = true,
+            Err(e) => self.error(format!("Could not change the note: {e}")),
+        }
+    }
+
+    /// Saves a note as a markdown file (colour tags removed, so it's plain markdown) or as
+    /// plain text, wherever the user picks.
+    fn export(&mut self, rel: &str, txt: bool) {
+        let Some(text) = self.note_text(rel) else { return };
+        let (ext, label) = if txt { ("txt", "Text") } else { ("md", "Markdown") };
+        let Some(path) = rfd::FileDialog::new()
+            .set_title(if txt { "Export as text" } else { "Export as markdown" })
+            .set_file_name(format!("{}.{ext}", vault::stem(rel)))
+            .add_filter(label, &[ext])
+            .save_file()
+        else {
+            return;
+        };
+        let out = if txt { scrap_core::meta::plain_text(&text) } else { scrap_core::colors::strip(&text) };
+        match std::fs::write(&path, out) {
+            Ok(()) => self.info(format!("Exported to {}", path.display())),
+            Err(e) => self.error(format!("Could not export: {e}")),
+        }
+    }
+
+    /// Copies files into the vault's attachments and links them at the cursor: images are
+    /// shown in the note, anything else becomes a link that opens it.
+    fn attach_files(&mut self, paths: &[PathBuf]) {
+        let (images, others): (Vec<PathBuf>, Vec<PathBuf>) = paths.iter().cloned().partition(|p| attach::is_image(p));
+        if !images.is_empty() {
+            self.add_images(&images);
+        }
+        if others.is_empty() {
+            return;
+        }
+        let (Some(v), Some(n)) = (&self.vault, &self.note) else {
+            self.error("Open a note to attach files to it");
+            return;
+        };
+        let (root, rel) = (v.root.clone(), n.rel.clone());
+        let mut links = Vec::new();
+        for path in &others {
+            let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let copied = scrap_core::attachments::free_path_for(&root, &name)
+                .and_then(|to| std::fs::copy(path, root.join(&to)).map(|_| to));
+            match copied {
+                Ok(to) => links.push(scrap_core::attachments::file_link(&rel, &to)),
+                Err(e) => self.error(format!("Couldn't attach {}: {e}", path.display())),
+            }
+        }
+        if links.is_empty() {
+            return;
+        }
+        if self.s.view == View::Preview {
+            self.s.view = View::Edit;
+        }
+        self.insert_block(&links.join("\n\n"));
+        self.save_now();
+        self.unsynced = true;
+        let n = links.len();
+        self.info(if n == 1 { "Attached a file".to_string() } else { format!("Attached {n} files") });
+    }
+
     fn add_images(&mut self, paths: &[PathBuf]) {
         let (Some(v), Some(n)) = (&self.vault, &self.note) else {
             self.error("Open a note to add images to it");
@@ -881,6 +1021,10 @@ impl App {
                 }
             }
             Dialog::Move { .. } => {}
+            Dialog::Tags { rel, text } => {
+                let tags: Vec<String> = text.split([',', ' ']).map(str::trim).filter(|t| !t.is_empty()).map(String::from).collect();
+                self.update_note(&rel, |t| scrap_core::meta::set_tags(t, &tags));
+            }
             Dialog::Remote { url } => {
                 let url = url.trim().to_string();
                 if !url.is_empty() {
@@ -1085,11 +1229,10 @@ impl App {
         if dropped.is_empty() {
             return;
         }
-        let images: Vec<PathBuf> = dropped.iter().filter(|p| attach::is_image(p)).cloned().collect();
-        if images.is_empty() {
-            self.error("Only images can be dropped into a note");
-        } else {
-            self.actions.push(Action::AddImages(Some(images)));
+        // Images are shown in the note; other files are attached as links.
+        let files: Vec<PathBuf> = dropped.into_iter().filter(|p| p.is_file()).collect();
+        if !files.is_empty() {
+            self.actions.push(Action::AttachFiles(Some(files)));
         }
     }
 

@@ -25,9 +25,15 @@ fn results(v: &Vault, query: &str) -> (Vec<Item>, usize) {
     if q.is_empty() {
         let mut recent: Vec<usize> = (0..v.notes.len()).collect();
         recent.sort_by(|&a, &b| v.notes[b].modified.cmp(&v.notes[a].modified));
+        recent.sort_by_key(|&i| !v.notes[i].pinned());
         items.extend(recent.into_iter().take(12).map(|index| Item::Note { index, line: None }));
         let n = items.len();
         return (items, n);
+    }
+    // #tag: the notes with that tag, each with its tags.
+    if scrap_core::meta::tag_query(q).is_some() {
+        items.extend(v.search(q, 50).into_iter().map(|h| Item::Note { index: h.note, line: Some(h.text) }));
+        return (items, 0);
     }
     let mut names: Vec<(i32, usize)> = v
         .notes

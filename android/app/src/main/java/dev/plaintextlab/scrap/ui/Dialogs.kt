@@ -1,6 +1,13 @@
 package dev.plaintextlab.scrap.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
@@ -125,14 +132,24 @@ fun NamePrompt(
  * folder itself and everything inside it can't be chosen.
  */
 @Composable
-fun MoveDialog(rel: String, isFolder: Boolean, folders: List<String>, onDismiss: () -> Unit, onMove: (String) -> Unit) {
-    val current = parentOf(rel)
+fun MoveDialog(
+    rel: String,
+    isFolder: Boolean,
+    folders: List<String>,
+    onDismiss: () -> Unit,
+    /** Picking where a copy goes: any folder, the note's own included. */
+    copy: Boolean = false,
+    onMove: (String) -> Unit,
+) {
+    val current = if (copy) null else parentOf(rel)
     // Depth-first order, so subfolders sit under their parents.
     val targets = remember(folders) { listOf("") + folders.sortedBy { it.lowercase().replace('/', '\u0000') } }
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(ScrapIcons.Move, contentDescription = null, tint = LocalAccents.current.orange) },
-        title = { Text("Move “${titleOf(rel)}” to") },
+        icon = {
+            Icon(if (copy) ScrapIcons.Copy else ScrapIcons.Move, contentDescription = null, tint = LocalAccents.current.orange)
+        },
+        title = { Text("${if (copy) "Copy" else "Move"} “${titleOf(rel)}” to") },
         text = {
             LazyColumn(Modifier.heightIn(max = 360.dp)) {
                 items(targets, key = { "dest:$it" }) { folder ->
@@ -173,6 +190,76 @@ fun ConfirmDelete(name: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
         title = { Text("Delete “$name”?") },
         text = { Text("It will be moved to the trash, where you can restore it from ⋮ › Trash.") },
         confirmButton = { TextButton(onClick = onConfirm) { Text("Delete") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** Edits a note's tags, comma-separated. */
+@Composable
+fun TagsDialog(initial: List<String>, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var value by remember { mutableStateOf(TextFieldValue(initial.joinToString(", "))) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(ScrapIcons.Label, contentDescription = null, tint = LocalAccents.current.aqua) },
+        title = { Text("Tags") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    label = { Text("Tags") },
+                    placeholder = { Text("groceries, home") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { onSave(value.text) }),
+                )
+                Text(
+                    "Separate tags with commas. #hashtags in the note count too. Search for #tag to find every note with it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(value.text) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** Picks a note's background colour, or none. */
+@Composable
+fun NoteColorDialog(current: String?, onDismiss: () -> Unit, onPick: (String?) -> Unit) {
+    val accents = LocalAccents.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(ScrapIcons.Palette, contentDescription = null) },
+        title = { Text("Background colour") },
+        text = {
+            Column {
+                for (row in TextColors.names.chunked(4)) {
+                    Row {
+                        for (name in row) {
+                            val color = TextColors.colorOf(name, accents) ?: MaterialTheme.colorScheme.onSurface
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .padding(6.dp)
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(color)
+                                    .border(
+                                        width = if (name == current) 3.dp else 0.dp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        shape = CircleShape,
+                                    )
+                                    .clickable { onPick(name) },
+                            ) {}
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onPick(null) }) { Text("No colour") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

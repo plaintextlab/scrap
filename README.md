@@ -16,6 +16,10 @@ The desktop and Android apps share the same core and the same features:
 - **Images in notes**: pick files, drop them on the window, paste a screenshot with Ctrl/Cmd+V, or (Android) take a photo. They're downscaled, stored in the vault's hidden `.attachments/` folder, synced with your notes, and previewed while you edit as well as in the reader.
 - **Checklists**: tick "Add a checklist" when creating a note to start a numbered checklist (a shopping list, say). Enter continues any list with the next number and an empty box (Enter on an empty item ends it), and checkboxes can be ticked in Read view.
 - **Android widget**: put any note on the home screen. Checklist items can be ticked right there; ✏ opens the note to edit and ＋ starts a new one. Long-press the widget to show a different note.
+- **Pin, colour and tag notes**: pinned notes stay at the top, a note can have a background colour, and tags (set from the note's menu, or `#hashtags` in the text) are one click from a search: `#groceries` lists every note with that tag. These are stored in the note itself, in a front matter block that Obsidian reads too.
+- **Duplicate, copy to another folder, export** as a `.md` file or a plain `.txt` file.
+- **Attach any file** (PDFs, documents, …): it's copied into the vault and linked in the note, and opens in its own app when clicked. Drop files on the window, or use the paperclip.
+- **All of markdown from the toolbar**: headings 1-6, tables, numbered lists, quotes, dividers, code blocks, links and footnotes.
 - **Text colours**: colour a selection red, orange, yellow, green, aqua, blue, purple or gray from the toolbar. Markdown has no colour syntax, so colours are saved as `<span style="color: blue">…</span>` (which Obsidian and VS Code also show), drawn in each theme's own shades. **Copy as markdown** (and Share on Android) leaves them out, giving plain markdown that works anywhere.
 - **YouTube previews** (desktop): a YouTube link on its own line shows the video's thumbnail; click it to watch.
 - **Instant search** (Ctrl+K): recent notes, matching names and matching lines with the hits highlighted. Type a name that doesn't exist to create it.

@@ -135,6 +135,17 @@ impl App {
         let tree_height = (ui.available_height() - FOOTER_HEIGHT).max(80.0);
         ScrollArea::vertical().max_height(tree_height).auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 1.0;
+            // Pinned notes, from any folder, above the tree.
+            let mut pinned: Vec<usize> = (0..v.notes.len()).filter(|&i| v.notes[i].pinned()).collect();
+            if !pinned.is_empty() {
+                pinned.sort_by_key(|&i| v.notes[i].name.to_lowercase());
+                ui.label(RichText::new("PINNED").size(11.0).color(p.faint));
+                ui.add_space(2.0);
+                for i in pinned {
+                    note_row(ui, v, i, 0.0, current.as_deref(), Some(icon::PUSH_PIN), &mut actions);
+                }
+                ui.add_space(8.0);
+            }
             tree(ui, v, &v.tree, 0, &self.s, current.as_deref(), &mut actions);
             if v.notes.is_empty() && v.tree.dirs.is_empty() {
                 ui.add_space(8.0);
@@ -281,21 +292,31 @@ fn tree(ui: &mut Ui, v: &Vault, dir: &Dir, depth: usize, s: &Settings, current: 
     if s.sort == Sort::Recent {
         notes.sort_by(|&a, &b| v.notes[b].modified.cmp(&v.notes[a].modified));
     }
+    // Pinned notes first in their folder too.
+    notes.sort_by_key(|&i| !v.notes[i].pinned());
     for i in notes {
-        let note = &v.notes[i];
-        let mut row = Row::new(icon::FILE_TEXT, &note.name);
-        row.tint = Some(p.blue);
-        row.indent = indent;
-        row.selected = current == Some(note.rel.as_str());
-        let resp = widgets::row(ui, row);
-        resp.dnd_set_drag_payload(Dragged(note.rel.clone()));
-        if resp.clicked() {
-            actions.push(Action::Open(note.rel.clone()));
-        }
-        let edited = crate::time::ago(note.modified);
-        let resp = if edited.is_empty() { resp } else { resp.on_hover_text(format!("Edited {edited}")) };
-        resp.context_menu(|ui| note_menu(ui, &note.rel, actions));
+        let glyph = v.notes[i].pinned().then_some(icon::PUSH_PIN);
+        note_row(ui, v, i, indent, current, glyph, actions);
     }
+}
+
+/// A note in the sidebar: its icon in the note's colour, a pin if it's pinned.
+fn note_row(ui: &mut Ui, v: &Vault, i: usize, indent: f32, current: Option<&str>, glyph: Option<&str>, actions: &mut Vec<Action>) {
+    let p = theme::palette(ui.ctx());
+    let note = &v.notes[i];
+    let color = note.color();
+    let mut row = Row::new(glyph.unwrap_or(icon::FILE_TEXT), &note.name);
+    row.tint = Some(color.as_deref().and_then(|c| p.text_color(c)).unwrap_or(if glyph.is_some() { p.orange } else { p.blue }));
+    row.indent = indent;
+    row.selected = current == Some(note.rel.as_str());
+    let resp = widgets::row(ui, row);
+    resp.dnd_set_drag_payload(Dragged(note.rel.clone()));
+    if resp.clicked() {
+        actions.push(Action::Open(note.rel.clone()));
+    }
+    let edited = crate::time::ago(note.modified);
+    let resp = if edited.is_empty() { resp } else { resp.on_hover_text(format!("Edited {edited}")) };
+    resp.context_menu(|ui| crate::layout::note_menu(ui, &note.rel, note.pinned(), color.as_deref(), false, actions));
 }
 
 /// Highlights `resp` while something can be dropped on it, and moves it into `folder`
@@ -333,26 +354,6 @@ fn folder_menu(ui: &mut Ui, rel: &str, actions: &mut Vec<Action>) {
     let items: [(&str, &str, Action); 5] = [
         (icon::NOTE_PENCIL, "New note here", Action::NewNote(rel.to_string())),
         (icon::FOLDER_SIMPLE_PLUS, "New folder here", Action::NewFolder(rel.to_string())),
-        (icon::PENCIL_SIMPLE, "Rename…", Action::Rename(rel.to_string())),
-        (icon::FOLDER_SIMPLE, "Move to…", Action::Move(rel.to_string())),
-        (icon::ARROW_SQUARE_OUT, "Show in file manager", Action::Reveal(rel.to_string())),
-    ];
-    for (glyph, label, action) in items {
-        if widgets::menu_item(ui, glyph, label).clicked() {
-            actions.push(action);
-            ui.close();
-        }
-    }
-    ui.separator();
-    if widgets::menu_item_ex(ui, icon::TRASH, "Move to trash", None, true).clicked() {
-        actions.push(Action::Delete(rel.to_string()));
-        ui.close();
-    }
-}
-
-fn note_menu(ui: &mut Ui, rel: &str, actions: &mut Vec<Action>) {
-    ui.set_min_width(220.0);
-    let items: [(&str, &str, Action); 3] = [
         (icon::PENCIL_SIMPLE, "Rename…", Action::Rename(rel.to_string())),
         (icon::FOLDER_SIMPLE, "Move to…", Action::Move(rel.to_string())),
         (icon::ARROW_SQUARE_OUT, "Show in file manager", Action::Reveal(rel.to_string())),

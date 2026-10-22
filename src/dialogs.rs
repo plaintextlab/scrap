@@ -11,6 +11,25 @@ use eframe::egui::{
     Stroke, Ui,
 };
 
+impl App {
+    fn copy_to(&mut self, rel: &str, folder: &str) {
+        self.save_now();
+        let Some(v) = &mut self.vault else { return };
+        match v.copy_to(rel, folder) {
+            Ok(new_rel) => {
+                self.unsynced = true;
+                if !folder.is_empty() {
+                    self.s.expanded.insert(folder.to_string());
+                }
+                let to = if folder.is_empty() { "Notes".to_string() } else { vault::stem(folder) };
+                self.info(format!("Copied to {to}"));
+                let _ = new_rel;
+            }
+            Err(e) => self.error(format!("Could not copy: {e}")),
+        }
+    }
+}
+
 fn all_folders(dir: &Dir, out: &mut Vec<String>) {
     for d in &dir.dirs {
         out.push(d.rel.clone());
@@ -35,7 +54,9 @@ impl App {
             Dialog::NewFolder { .. } => ("New folder", icon::FOLDER_SIMPLE_PLUS, "Create", false),
             Dialog::Rename { .. } => ("Rename", icon::PENCIL_SIMPLE, "Rename", false),
             Dialog::Delete { .. } => ("Move to trash?", icon::TRASH, "Move to trash", true),
-            Dialog::Move { .. } => ("Move to…", icon::FOLDER_SIMPLE, "", false),
+            Dialog::Move { copy: false, .. } => ("Move to…", icon::FOLDER_SIMPLE, "", false),
+            Dialog::Move { copy: true, .. } => ("Copy to…", icon::COPY, "", false),
+            Dialog::Tags { .. } => ("Tags", icon::TAG, "Save", false),
             Dialog::Remote { .. } => ("Git remote", icon::GIT_BRANCH, "Save", false),
             Dialog::Clone { .. } => ("Clone a vault", icon::DOWNLOAD_SIMPLE, "Clone", false),
             Dialog::EmptyTrash => ("Empty the trash?", icon::TRASH, "Empty trash", true),
@@ -105,10 +126,17 @@ impl App {
                     Dialog::DeleteForever { name } => {
                         muted(ui, &format!("“{name}” will be deleted for good. This can't be undone."));
                     }
-                    Dialog::Move { rel } => {
+                    Dialog::Tags { text, .. } => {
+                        submit |= field(ui, text, "groceries, home");
+                        ui.add_space(6.0);
+                        muted(ui, "Separate tags with commas. #hashtags written in the note count as tags too. Search for #tag to find every note with it.");
+                    }
+                    Dialog::Move { rel, copy } => {
                         let is_dir = folders.contains(rel);
-                        let current = vault::parent(rel).to_string();
-                        muted(ui, &format!("Choose where to move “{}”.", vault::stem(rel)));
+                        // A copy can go anywhere, its own folder included (it gets a new name there).
+                        let current = if *copy { String::from("\u{0}") } else { vault::parent(rel).to_string() };
+                        let verb = if *copy { "put a copy of" } else { "move" };
+                        muted(ui, &format!("Choose where to {verb} “{}”.", vault::stem(rel)));
                         ui.add_space(8.0);
                         ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                             ui.spacing_mut().item_spacing.y = 1.0;
@@ -176,8 +204,12 @@ impl App {
         }
         let close = modal.should_close();
         if let Some(folder) = move_to {
-            if let Some(Dialog::Move { rel }) = self.dialog.take() {
-                self.actions.push(Action::MoveTo(rel, folder));
+            if let Some(Dialog::Move { rel, copy }) = self.dialog.take() {
+                if copy {
+                    self.copy_to(&rel, &folder);
+                } else {
+                    self.actions.push(Action::MoveTo(rel, folder));
+                }
             }
             self.focus_editor = true;
         } else if submit {

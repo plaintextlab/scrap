@@ -21,7 +21,14 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -67,6 +74,7 @@ import dev.plaintextlab.scrap.Attachments
 import dev.plaintextlab.scrap.Core
 import dev.plaintextlab.scrap.NoteRef
 import java.io.File
+import dev.plaintextlab.scrap.NoteMeta
 import dev.plaintextlab.scrap.OutLink
 import dev.plaintextlab.scrap.Screen
 import dev.plaintextlab.scrap.VaultViewModel
@@ -80,8 +88,22 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var moving by remember { mutableStateOf(false) }
+    var copying by remember { mutableStateOf(false) }
+    var tagging by remember { mutableStateOf(false) }
+    var colouring by remember { mutableStateOf(false) }
     val reading = vm.noteLoaded && !vm.editing
     val context = LocalContext.current
+    val meta = remember(vm.noteText) { NoteMeta.of(vm.noteText) }
+    // The note's background colour, mixed into the page.
+    val surface = MaterialTheme.colorScheme.surface
+    val tint = meta.color?.let { TextColors.colorOf(it, LocalAccents.current) }
+    val background = tint?.let { lerp(surface, it, 0.16f) } ?: surface
+    val exportMarkdown = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
+        if (uri != null) vm.export(uri, plainText = false)
+    }
+    val exportText = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        if (uri != null) vm.export(uri, plainText = true)
+    }
 
     Scaffold(
         topBar = {
@@ -106,6 +128,31 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
                             Icon(Icons.Default.MoreVert, contentDescription = "More")
                         }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(if (meta.pinned) "Unpin" else "Pin to top") },
+                                leadingIcon = { Icon(ScrapIcons.Pin, null, tint = LocalAccents.current.orange) },
+                                onClick = {
+                                    menu = false
+                                    vm.togglePin(rel)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Tags…") },
+                                leadingIcon = { Icon(ScrapIcons.Label, null, tint = LocalAccents.current.aqua) },
+                                onClick = {
+                                    menu = false
+                                    tagging = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Background colour…") },
+                                leadingIcon = { Icon(ScrapIcons.Palette, null, tint = tint ?: LocalContentColor.current) },
+                                onClick = {
+                                    menu = false
+                                    colouring = true
+                                },
+                            )
+                            HorizontalDivider()
                             DropdownMenuItem(
                                 text = { Text("Share") },
                                 leadingIcon = { Icon(Icons.Default.Share, null) },
@@ -136,6 +183,38 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
                                 },
                             )
                             DropdownMenuItem(
+                                text = { Text("Duplicate") },
+                                leadingIcon = { Icon(ScrapIcons.Copy, null) },
+                                onClick = {
+                                    menu = false
+                                    vm.duplicate(rel)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Copy to…") },
+                                leadingIcon = { Icon(ScrapIcons.Copy, null, tint = LocalAccents.current.orange) },
+                                onClick = {
+                                    menu = false
+                                    copying = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Export as markdown") },
+                                leadingIcon = { Icon(ScrapIcons.Export, null) },
+                                onClick = {
+                                    menu = false
+                                    exportMarkdown.launch("${titleOf(rel)}.md")
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Export as text") },
+                                leadingIcon = { Icon(ScrapIcons.Export, null) },
+                                onClick = {
+                                    menu = false
+                                    exportText.launch("${titleOf(rel)}.txt")
+                                },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Delete") },
                                 leadingIcon = { Icon(Icons.Default.Delete, null, tint = LocalAccents.current.red) },
                                 onClick = {
@@ -155,9 +234,7 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = background),
             )
         },
         floatingActionButton = {
@@ -168,6 +245,7 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
             }
         },
         snackbarHost = { SnackbarHost(snackbar) },
+        containerColor = background,
     ) { padding ->
         when {
             !vm.noteLoaded -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
@@ -175,9 +253,9 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
             }
             else -> ScaledText(vm.settings.textScale) {
                 if (vm.editing) {
-                    Editor(vm.noteText, vm::updateText, padding, onAddImage = vm::addImage)
+                    Editor(vm.noteText, vm::updateText, padding, onAddImage = vm::addImage, onAttachFile = vm::attachFile)
                 } else {
-                    Reader(vm, rel, vm.noteText, padding)
+                    Reader(vm, rel, vm.noteText, meta.tags, padding)
                 }
             }
         }
@@ -198,6 +276,24 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
             vm.move(rel, dest)
         }
     }
+    if (copying) {
+        MoveDialog(rel, isFolder = false, folders = vm.folders, onDismiss = { copying = false }, copy = true) { dest ->
+            copying = false
+            vm.copyTo(rel, dest)
+        }
+    }
+    if (tagging) {
+        TagsDialog(meta.frontTags, onDismiss = { tagging = false }) {
+            tagging = false
+            vm.setTags(rel, it)
+        }
+    }
+    if (colouring) {
+        NoteColorDialog(meta.color, onDismiss = { colouring = false }) {
+            colouring = false
+            vm.setColor(rel, it)
+        }
+    }
     if (deleting) {
         ConfirmDelete(titleOf(rel), onDismiss = { deleting = false }) {
             deleting = false
@@ -207,7 +303,7 @@ fun NoteScreen(vm: VaultViewModel, rel: String, snackbar: SnackbarHostState) {
 }
 
 @Composable
-private fun Reader(vm: VaultViewModel, rel: String, text: String, padding: PaddingValues) {
+private fun Reader(vm: VaultViewModel, rel: String, text: String, tags: List<String>, padding: PaddingValues) {
     val blocks by produceState<List<Attachments.Block>?>(null, text, rel) {
         val markdown = vm.preview(text)
         value = withContext(Dispatchers.IO) {
@@ -222,6 +318,9 @@ private fun Reader(vm: VaultViewModel, rel: String, text: String, padding: Paddi
             override fun openUri(uri: String) {
                 if (uri.startsWith("wiki:")) {
                     vm.openLink(Uri.decode(uri.removePrefix("wiki:")))
+                } else if (!uri.contains(':')) {
+                    // A relative link: another note, or an attached file.
+                    vm.openRelative(rel, uri)
                 } else {
                     runCatching { system.openUri(uri) }
                 }
@@ -235,6 +334,18 @@ private fun Reader(vm: VaultViewModel, rel: String, text: String, padding: Paddi
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 12.dp),
     ) {
+        // Tags: tap one to find every note with it.
+        if (tags.isNotEmpty()) {
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 8.dp)) {
+                for (tag in tags) {
+                    SuggestionChip(
+                        onClick = { vm.searchTag(tag) },
+                        label = { Text("#$tag", color = LocalAccents.current.aqua) },
+                        modifier = Modifier.padding(end = 6.dp),
+                    )
+                }
+            }
+        }
         if (text.isBlank()) {
             Text(
                 "This note is empty. Tap the pencil to start writing.",

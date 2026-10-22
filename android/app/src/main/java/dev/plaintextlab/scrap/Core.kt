@@ -28,6 +28,18 @@ object Core {
     @JvmStatic external fun outgoing(text: String): String
     @JvmStatic external fun search(query: String): String
     @JvmStatic external fun preview(text: String): String
+    @JvmStatic external fun duplicate(rel: String): String
+    @JvmStatic external fun copyTo(rel: String, folder: String): String
+    /** JSON: pinned, color, tags (all), frontTags (the editable ones). */
+    @JvmStatic external fun noteMeta(text: String): String
+    @JvmStatic external fun setPinned(text: String, pinned: String): String
+    /** An empty [color] removes it. */
+    @JvmStatic external fun setColor(text: String, color: String): String
+    /** [tags] is comma-separated. */
+    @JvmStatic external fun setTags(text: String, tags: String): String
+    @JvmStatic external fun plainText(text: String): String
+    @JvmStatic external fun attachmentPath(name: String): String
+    @JvmStatic external fun fileLink(rel: String, path: String): String
     /** The note as plain markdown, without colour spans. */
     @JvmStatic external fun stripColors(text: String): String
     @JvmStatic external fun sync(config: String): String

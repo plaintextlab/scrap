@@ -31,6 +31,14 @@ pub enum Op {
     Code,
     /// Colour the selection with a name from `scrap_core::colors::NAMES`, or remove it.
     Color(Option<&'static str>),
+    /// Heading of level 1-6 (toggles).
+    HeadingLevel(usize),
+    NumberedList,
+    Table,
+    Rule,
+    CodeBlock,
+    Link,
+    Footnote,
 }
 
 fn editor_id(rel: &str) -> Id {
@@ -80,6 +88,13 @@ impl App {
                         }
                     }
                     Op::Color(name) => format::color(text, sel, name),
+                    Op::HeadingLevel(level) => format::heading(text, sel, level),
+                    Op::NumberedList => format::toggle_line_prefix(text, sel, "1. "),
+                    Op::Table => format::insert_block(text, sel.1, format::TABLE),
+                    Op::Rule => format::insert_block(text, sel.1, "---"),
+                    Op::CodeBlock => format::wrap(text, sel, "```\n", "\n```"),
+                    Op::Link => format::link(text, sel),
+                    Op::Footnote => format::footnote(text, sel),
                     Op::Undo | Op::Redo => unreachable!(),
                 };
                 undoer.add_undo(&current);

@@ -64,6 +64,13 @@ object Lists {
         return out
     }
 
+    /** How many lines at the top are the note's front matter (its `---` properties block). */
+    fun frontMatterLines(lines: List<String>): Int {
+        if (lines.firstOrNull()?.trimEnd() != "---") return 0
+        val end = lines.drop(1).indexOfFirst { it.trimEnd() == "---" || it.trimEnd() == "..." }
+        return if (end < 0) 0 else end + 2
+    }
+
     fun unquote(line: String): String {
         var l = line
         while (true) {

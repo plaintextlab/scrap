@@ -96,7 +96,15 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
         val n = json.getJSONArray("notes")
         folders = f.map { f.getString(it) }
         notes = n.map {
-            n.getJSONObject(it).let { o -> NoteRef(o.getString("rel"), o.getString("name"), o.optLong("modified")) }
+            n.getJSONObject(it).let { o ->
+                NoteRef(
+                    o.getString("rel"),
+                    o.getString("name"),
+                    o.optLong("modified"),
+                    pinned = o.optBoolean("pinned"),
+                    color = if (o.isNull("color")) null else o.getString("color"),
+                )
+            }
         }
         // Notes changed (sync, rename, delete): refresh open search results.
         if (searchOpen && searchQuery.isNotBlank()) updateSearch(searchQuery)
@@ -429,6 +437,108 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
         val rel = io { Core.createFolder(parent, name) }
         reload()
         navigate(Screen.Browse(rel))
+    }
+
+    // ---- Note properties, copies, exports and attachments -----------------
+
+    /** Changes a note's text with [change] and saves it, whether or not it's the open note. */
+    private fun changeNote(rel: String, change: (String) -> String) = launch {
+        if (rel == noteRel && noteLoaded) {
+            noteText = change(noteText)
+            flush()
+        } else {
+            io { Core.save(rel, change(Core.read(rel))) }
+            unsynced = true
+            if (WidgetPrefs.shows(app, activeRepoId, rel)) NoteWidget.refresh(app)
+        }
+        reload()
+    }
+
+    fun togglePin(rel: String) = changeNote(rel) { Core.setPinned(it, if (NoteMeta.of(it).pinned) "false" else "true") }
+
+    /** The note's background colour, or none (null). */
+    fun setColor(rel: String, color: String?) = changeNote(rel) { Core.setColor(it, color ?: "") }
+
+    /** The note's own tags, comma-separated (#hashtags in its text stay as they are). */
+    fun setTags(rel: String, tags: String) = changeNote(rel) { Core.setTags(it, tags) }
+
+    fun duplicate(rel: String) = launch {
+        flush()
+        val copy = io { Core.duplicate(rel) }
+        unsynced = true
+        reload()
+        navigate(Screen.Note(copy))
+        message = "Duplicated as ${titleOf(copy)}"
+    }
+
+    fun copyTo(rel: String, folder: String) = launch {
+        flush()
+        io { Core.copyTo(rel, folder) }
+        unsynced = true
+        reload()
+        message = "Copied to ${if (folder.isEmpty()) "Notes" else nameOf(folder)}"
+    }
+
+    /** Writes the open note to [target]: markdown without colour tags, or plain text. */
+    fun export(target: android.net.Uri, plainText: Boolean) = launch {
+        val text = noteText
+        val out = if (plainText) Core.plainText(text) else Core.stripColors(text)
+        io { app.contentResolver.openOutputStream(target, "wt")!!.use { it.write(out.toByteArray()) } }
+        message = "Exported"
+    }
+
+    /** Copies any file into the vault's attachments; returns the markdown link to it. */
+    suspend fun attachFile(source: android.net.Uri): String? {
+        val rel = noteRel ?: return null
+        return io {
+            runCatching {
+                val resolver = app.contentResolver
+                val name = resolver.query(source, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+                    ?: source.lastPathSegment?.substringAfterLast('/')
+                    ?: "file"
+                val path = Core.attachmentPath(name)
+                val file = java.io.File(Vault.dir(app), path)
+                resolver.openInputStream(source)!!.use { input -> file.outputStream().use { input.copyTo(it) } }
+                unsynced = true
+                Core.fileLink(rel, path)
+            }.getOrNull()
+        }
+    }
+
+    /**
+     * A relative link clicked in the note at [fromRel]: another note opens in the app, an
+     * attached file in the app the phone uses for it.
+     */
+    fun openRelative(fromRel: String, link: String) {
+        val vault = Vault.dir(app).canonicalFile
+        val path = android.net.Uri.decode(link.substringBefore('#'))
+        val file = java.io.File(java.io.File(vault, parentOf(fromRel)), path).canonicalFile
+        if (!file.path.startsWith(vault.path)) return
+        when {
+            file.isFile && file.name.endsWith(".md") -> navigate(Screen.Note(file.relativeTo(vault).invariantSeparatorsPath))
+            file.isFile -> openFile(file)
+            else -> openLink(path)
+        }
+    }
+
+    private fun openFile(file: java.io.File) {
+        val uri = androidx.core.content.FileProvider.getUriForFile(app, "${app.packageName}.files", file)
+        val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "*/*"
+        val view = android.content.Intent(android.content.Intent.ACTION_VIEW)
+            .setDataAndType(uri, mime)
+            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            app.startActivity(view)
+        } catch (e: android.content.ActivityNotFoundException) {
+            message = "No app on this phone opens ${file.extension.ifEmpty { "this" }} files"
+        }
+    }
+
+    /** Search for the notes with a tag. */
+    fun searchTag(tag: String) {
+        openSearch()
+        updateSearch("#$tag")
     }
 
     /** Text shared from another app becomes a new note. */

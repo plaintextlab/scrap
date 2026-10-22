@@ -12,6 +12,7 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.em
+import dev.plaintextlab.scrap.Lists
 
 /**
  * Styles markdown in the editor without changing the text, so cursor positions map 1:1.
@@ -43,10 +44,14 @@ class MarkdownHighlight(private val c: ColorScheme, private val g: AccentColors)
         append(s)
         var inFence = false
         var start = 0
-        for (line in s.split('\n')) {
+        val lines = s.split('\n')
+        // The note's properties (front matter) stay in the background.
+        val properties = Lists.frontMatterLines(lines)
+        for ((index, line) in lines.withIndex()) {
             val end = start + line.length
             val trimmed = line.trimStart()
             when {
+                index < properties -> addStyle(dim, start, end)
                 trimmed.startsWith("```") || trimmed.startsWith("~~~") -> {
                     inFence = !inFence
                     addStyle(code.merge(dim), start, end)

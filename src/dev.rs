@@ -6,7 +6,8 @@
 //! `delete:<path>`, `links`, `nosidebar`, `expand:<folder>`, `select:<from>-<to>`,
 //! `fmt:bold|italic|heading|list|check|undo|redo|nocolor|<colour name>`,
 //! `addimage:<file>`, `newnote:<name>` (the dialog, checklist ticked), `checklist:<name>`,
-//! `tick:<n>` (the nth checklist item, as a click in Read view does), `save`.
+//! `tick:<n>` (the nth checklist item, as a click in Read view does), `pin:<path>`,
+//! `bg:<path>=<colour>`, `tags:<path>=<a, b>`, `save`.
 
 use crate::app::{Action, App, Dialog, Page, SearchState, ThemeChoice, View};
 use crate::editor::Op;
@@ -100,7 +101,17 @@ impl App {
                 self.s.theme = if arg == "dark" { ThemeChoice::Dark } else { ThemeChoice::Light };
                 self.apply_theme();
             }
-            "move" => self.dialog = Some(Dialog::Move { rel: arg.to_string() }),
+            "move" => self.dialog = Some(Dialog::Move { rel: arg.to_string(), copy: false }),
+            "pin" => self.run(Action::TogglePin(arg.to_string())),
+            "bg" => {
+                let (rel, color) = arg.split_once('=').unwrap_or((arg, ""));
+                let color = scrap_core::colors::NAMES.into_iter().find(|n| *n == color);
+                self.run(Action::SetColor(rel.to_string(), color));
+            }
+            "tags" => {
+                let (rel, tags) = arg.split_once('=').unwrap_or((arg, ""));
+                self.submit(Dialog::Tags { rel: rel.to_string(), text: tags.to_string() });
+            }
             "newnote" => {
                 self.dialog = Some(Dialog::NewNote { folder: String::new(), name: arg.to_string(), checklist: true })
             }

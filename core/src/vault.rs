@@ -34,6 +34,21 @@ pub struct Note {
     pub modified: u64,
 }
 
+impl Note {
+    pub fn pinned(&self) -> bool {
+        crate::meta::pinned(&self.content)
+    }
+
+    /// Background colour name from the note's front matter.
+    pub fn color(&self) -> Option<String> {
+        crate::meta::color(&self.content)
+    }
+
+    pub fn tags(&self) -> Vec<String> {
+        crate::meta::tags(&self.content)
+    }
+}
+
 #[derive(Default)]
 pub struct Dir {
     pub name: String,
@@ -156,7 +171,12 @@ impl Vault {
             .collect()
     }
 
+    /// Notes whose name or text contain `query` (ignoring case), a line per match. A query
+    /// of `#tag` or `tag:tag` instead finds the notes with that tag, pinned ones first.
     pub fn search(&self, query: &str, limit: usize) -> Vec<Hit> {
+        if let Some(tag) = crate::meta::tag_query(query) {
+            return self.tagged(tag, limit);
+        }
         let q = query.trim().to_lowercase();
         let mut hits = Vec::new();
         if q.is_empty() {
@@ -183,6 +203,35 @@ impl Vault {
             }
         }
         hits
+    }
+
+    /// Notes with `tag` (or a tag nested under it), pinned first, then most recent.
+    fn tagged(&self, tag: &str, limit: usize) -> Vec<Hit> {
+        let mut found: Vec<usize> = (0..self.notes.len()).filter(|&i| crate::meta::has_tag(&self.notes[i].content, tag)).collect();
+        found.sort_by_key(|&i| (!self.notes[i].pinned(), std::cmp::Reverse(self.notes[i].modified)));
+        found.truncate(limit);
+        found
+            .into_iter()
+            .map(|i| {
+                let tags = self.notes[i].tags().iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join("  ");
+                Hit { note: i, text: tags }
+            })
+            .collect()
+    }
+
+    /// Every tag in the vault with how many notes have it, most used first.
+    pub fn all_tags(&self) -> Vec<(String, usize)> {
+        let mut counts: Vec<(String, usize)> = Vec::new();
+        for n in &self.notes {
+            for t in n.tags() {
+                match counts.iter_mut().find(|(c, _)| c.eq_ignore_ascii_case(&t)) {
+                    Some(entry) => entry.1 += 1,
+                    None => counts.push((t, 1)),
+                }
+            }
+        }
+        counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase())));
+        counts
     }
 
     pub fn create_note(&mut self, folder: &str, name: &str) -> io::Result<String> {
@@ -291,6 +340,29 @@ impl Vault {
                 fs::write(self.path(&new_note), updated)?;
             }
         }
+        self.rescan();
+        Ok(new_rel)
+    }
+
+    /// Makes a copy of a note next to it, named "<name> copy" (numbered if taken).
+    pub fn duplicate(&mut self, rel: &str) -> io::Result<String> {
+        let base = format!("{} copy", stem(rel));
+        let new_rel = self.unique(parent(rel), &base, ".md");
+        fs::write(self.path(&new_rel), self.read(rel)?)?;
+        self.rescan();
+        Ok(new_rel)
+    }
+
+    /// Copies a note into `folder` ("" for the top level), keeping its name (numbered if
+    /// taken); relative links, such as images, are rewritten to still point at their files.
+    pub fn copy_to(&mut self, rel: &str, folder: &str) -> io::Result<String> {
+        if !folder.is_empty() && !self.path(folder).is_dir() {
+            return Err(io::Error::new(io::ErrorKind::NotFound, format!("folder \"{folder}\" doesn't exist")));
+        }
+        let content = self.read(rel)?;
+        let new_rel = self.unique(folder, &stem(rel), ".md");
+        let same = |p: &str| p.to_string();
+        fs::write(self.path(&new_rel), rewrite_relative_links(&content, parent(rel), folder, &same))?;
         self.rescan();
         Ok(new_rel)
     }
@@ -735,6 +807,29 @@ mod tests {
         assert_eq!(inner, "Projects/2026");
         assert!(root.join("Projects/2026/.gitkeep").exists());
         assert_eq!(v.tree.dirs.iter().find(|d| d.rel == outer).unwrap().dirs[0].rel, inner);
+    }
+
+    #[test]
+    fn duplicates_copies_and_finds_tags() {
+        let root = temp_dir("copy");
+        fs::create_dir_all(root.join("A")).unwrap();
+        fs::write(root.join("List.md"), "---\npinned: true\n---\n![](.attachments/p.jpg) #home\n").unwrap();
+        fs::write(root.join("Other.md"), "#home/kitchen and #work").unwrap();
+        let mut v = Vault::open(root.clone()).unwrap();
+        assert_eq!(v.duplicate("List.md").unwrap(), "List copy.md");
+        assert_eq!(v.duplicate("List.md").unwrap(), "List copy 1.md");
+        let copied = v.copy_to("List.md", "A").unwrap();
+        assert_eq!(copied, "A/List.md");
+        let text = fs::read_to_string(root.join(&copied)).unwrap();
+        assert!(text.contains("![](../.attachments/p.jpg)"), "{text}");
+        assert!(root.join("List.md").exists(), "the original stays");
+
+        let hits = v.search("#home", 10);
+        let names: Vec<&str> = hits.iter().map(|h| v.notes[h.note].rel.as_str()).collect();
+        assert_eq!(names.len(), 5);
+        assert_eq!(names.last(), Some(&"Other.md"), "pinned notes first: {names:?}");
+        assert_eq!(v.search("tag:work", 10).len(), 1);
+        assert_eq!(v.all_tags()[0], ("home".to_string(), 4));
     }
 
     #[test]
