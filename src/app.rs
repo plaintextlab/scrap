@@ -127,7 +127,8 @@ pub(crate) enum Page {
 }
 
 pub(crate) enum Dialog {
-    NewNote { folder: String, name: String },
+    /// `checklist`: start the note with a numbered checklist.
+    NewNote { folder: String, name: String, checklist: bool },
     NewFolder { parent: String, name: String },
     Rename { rel: String, name: String },
     Delete { rel: String },
@@ -537,6 +538,16 @@ impl App {
     // ---------------------------------------------------------------------
 
     fn follow_link(&mut self, url: &str) {
+        // A checkbox clicked in Read view: tick or untick that item.
+        if let Some(nth) = url.strip_prefix("task:").and_then(|n| n.parse().ok()) {
+            if let Some(n) = &mut self.note {
+                if let Some(text) = scrap_core::lists::toggle_task(&n.text, nth) {
+                    n.text = text;
+                    self.save_now();
+                }
+            }
+            return;
+        }
         if let Some(target) = url.strip_prefix("wiki:") {
             self.open_wiki(target);
             return;
@@ -608,7 +619,9 @@ impl App {
                 }
             }
             Action::Link(url) => self.follow_link(&url),
-            Action::NewNote(folder) => self.dialog = Some(Dialog::NewNote { folder, name: String::new() }),
+            Action::NewNote(folder) => {
+                self.dialog = Some(Dialog::NewNote { folder, name: String::new(), checklist: false })
+            }
             Action::NewFolder(parent) => self.dialog = Some(Dialog::NewFolder { parent, name: String::new() }),
             Action::Rename(rel) => {
                 let name = vault::stem(&rel);
@@ -799,13 +812,24 @@ impl App {
 
     pub(crate) fn submit(&mut self, dialog: Dialog) {
         match dialog {
-            Dialog::NewNote { folder, name } => {
+            Dialog::NewNote { folder, name, checklist } => {
                 let Some(v) = &mut self.vault else { return };
-                match v.create_note(&folder, &name) {
+                let created = v.create_note(&folder, &name).and_then(|rel| {
+                    if checklist {
+                        v.save(&rel, scrap_core::lists::NEW_CHECKLIST)?;
+                    }
+                    Ok(rel)
+                });
+                match created {
                     Ok(rel) => {
                         self.unsynced = true;
                         self.s.view = View::Edit;
                         self.open(&rel, true);
+                        if checklist {
+                            // Ready to type the first item.
+                            self.s.view = View::Edit;
+                            self.cursor_to_end();
+                        }
                     }
                     Err(e) => self.error(format!("Could not create note: {e}")),
                 }

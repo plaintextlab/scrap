@@ -137,19 +137,13 @@ fn is_rule(t: &str) -> bool {
 }
 
 fn list_prefix(t: &str) -> usize {
-    for p in ["- [ ] ", "- [x] ", "- [X] ", "* [ ] ", "* [x] ", "- ", "* ", "+ ", "> "] {
-        if t.starts_with(p) {
-            return p.len();
-        }
+    if let Some(item) = scrap_core::lists::item(t) {
+        return item.prefix;
     }
-    if t.starts_with('>') {
-        return 1;
+    if t.starts_with("> ") {
+        return 2;
     }
-    let digits = t.bytes().take_while(u8::is_ascii_digit).count();
-    if (1..10).contains(&digits) && (t[digits..].starts_with(". ") || t[digits..].starts_with(") ")) {
-        return digits + 2;
-    }
-    0
+    usize::from(t.starts_with('>'))
 }
 
 fn inline(job: &mut LayoutJob, s: &str, f: &TextFormat, c: &Palette) {
@@ -303,6 +297,8 @@ struct SpanStyle {
     code: bool,
     link: Option<String>,
     color: Option<Color32>,
+    /// A checklist box: its index among the note's checklist items, to tick it on click.
+    task: Option<usize>,
 }
 
 struct Span {
@@ -352,6 +348,8 @@ struct Renderer {
     clicked: Option<String>,
     /// For each open `<span>`: the text colour to restore when it closes.
     spans_open: Vec<Option<Color32>>,
+    /// Checklist items seen so far.
+    tasks: usize,
 }
 
 impl Renderer {
@@ -372,6 +370,7 @@ impl Renderer {
             tables: 0,
             clicked: None,
             spans_open: Vec::new(),
+            tasks: 0,
         }
     }
 
@@ -433,10 +432,13 @@ impl Renderer {
             }
             Event::TaskListMarker(done) => {
                 if self.skip == 0 {
-                    // The list bullet is replaced by the checkbox.
-                    self.bullet = Some(String::new());
+                    // The checkbox replaces a bullet; a numbered checklist keeps its numbers.
+                    if !self.bullet.as_deref().is_some_and(|b| b.starts_with(|c: char| c.is_ascii_digit())) {
+                        self.bullet = Some(String::new());
+                    }
                     let (glyph, color) = if done { (icon::CHECK_SQUARE, self.c.accent) } else { (icon::SQUARE, self.c.faint) };
-                    let style = SpanStyle { color: Some(color), ..SpanStyle::default() };
+                    let style = SpanStyle { color: Some(color), task: Some(self.tasks), ..SpanStyle::default() };
+                    self.tasks += 1;
                     self.spans.push(Span { text: format!("{glyph}  "), style });
                     if done {
                         self.style.strike = true;
@@ -787,6 +789,11 @@ fn span_ui(ui: &mut Ui, span: &Span, size: f32, heading: bool, quote: bool, c: &
     }
     if st.code {
         rt = rt.family(FontFamily::Monospace).size(size * 0.86).color(c.green).background_color(c.code_bg);
+    }
+    if let Some(nth) = st.task {
+        let tick = ui.add(egui::Label::new(rt).sense(egui::Sense::click()));
+        let tip = "Tick or untick";
+        return tick.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tip).clicked().then(|| format!("task:{nth}"));
     }
     match &st.link {
         Some(url) => {

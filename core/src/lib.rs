@@ -4,4 +4,5 @@
 pub mod attachments;
 pub mod colors;
 pub mod links;
+pub mod lists;
 pub mod vault;

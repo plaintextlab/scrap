@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Scrap</string>
+    <string name="widget_label">Scrap note</string>
+    <string name="widget_description">A note on your home screen, such as a shopping list you can tick off</string>
 </resources>

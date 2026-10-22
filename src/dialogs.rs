@@ -76,12 +76,15 @@ impl App {
                     ui.add(egui::Label::new(RichText::new(text).color(p.muted)).wrap());
                 };
                 match dialog {
-                    Dialog::NewNote { folder, name } => {
+                    Dialog::NewNote { folder, name, checklist } => {
                         if !folder.is_empty() {
                             muted(ui, &format!("In {folder}"));
                             ui.add_space(6.0);
                         }
                         submit |= field(ui, name, "Untitled");
+                        ui.add_space(10.0);
+                        ui.checkbox(checklist, "Add a checklist")
+                            .on_hover_text("Start the note with a numbered checklist, such as a shopping list");
                     }
                     Dialog::NewFolder { parent, name } => {
                         if !parent.is_empty() {

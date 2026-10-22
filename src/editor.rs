@@ -105,6 +105,17 @@ impl App {
         (undoer.has_undo(&current), undoer.has_redo(&current))
     }
 
+    /// Puts the open note's cursor at the end of its text (and focuses the editor).
+    pub(crate) fn cursor_to_end(&mut self) {
+        let Some(n) = &self.note else { return };
+        let id = editor_id(&n.rel);
+        let mut state = TextEditState::load(&self.ctx, id).unwrap_or_default();
+        let end = n.text.chars().count();
+        state.cursor.set_char_range(Some(CCursorRange::one(CCursor::new(end))));
+        state.store(&self.ctx, id);
+        self.focus_editor = true;
+    }
+
     /// Inserts a paragraph (such as an image) at the cursor, or at the end.
     pub(crate) fn insert_block(&mut self, block: &str) {
         let Some(n) = &mut self.note else { return };
@@ -167,6 +178,19 @@ impl App {
                     paint_pictures(ui, &out, &n.text, &pictures, size);
                     if out.response.changed() {
                         n.edited = Some(Instant::now());
+                        // Enter in a list starts the next item (or ends the list on an empty one).
+                        let enter = ui.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.any());
+                        if let Some(range) = out.cursor_range.filter(|_| enter) {
+                            let cursor = range.primary.index.0;
+                            let nl = n.text.char_indices().nth(cursor.saturating_sub(1)).map_or(n.text.len(), |(b, _)| b);
+                            if let Some((text, at)) = scrap_core::lists::continue_list(&n.text, nl) {
+                                let at = text[..at].chars().count();
+                                n.text = text;
+                                let mut state = out.state.clone();
+                                state.cursor.set_char_range(Some(CCursorRange::one(CCursor::new(at))));
+                                state.store(ui.ctx(), editor_id(&n.rel));
+                            }
+                        }
                     }
                     if focus {
                         out.response.request_focus();

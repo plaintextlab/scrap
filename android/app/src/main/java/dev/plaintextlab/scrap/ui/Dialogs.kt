@@ -1,7 +1,14 @@
 package dev.plaintextlab.scrap.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.Checkbox
+import androidx.compose.runtime.MutableState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -45,14 +52,18 @@ sealed interface NameDialog {
     data class Rename(val rel: String, val current: String) : NameDialog
 }
 
+/** [onConfirm] gets the name and, for a new note, whether to start it with a checklist. */
 @Composable
-fun NameDialogHost(dialog: NameDialog, onDismiss: () -> Unit, onConfirm: (NameDialog, String) -> Unit) {
+fun NameDialogHost(dialog: NameDialog, onDismiss: () -> Unit, onConfirm: (NameDialog, String, Boolean) -> Unit) {
     val (title, initial, action) = when (dialog) {
         is NameDialog.NewNote -> Triple("New note", "", "Create")
         is NameDialog.NewFolder -> Triple("New folder", "", "Create")
         is NameDialog.Rename -> Triple("Rename", dialog.current, "Rename")
     }
-    NamePrompt(title, initial, action, onDismiss) { onConfirm(dialog, it) }
+    val checklist = remember { mutableStateOf(false) }
+    NamePrompt(title, initial, action, onDismiss, checklist.takeIf { dialog is NameDialog.NewNote }) {
+        onConfirm(dialog, it, checklist.value)
+    }
 }
 
 @Composable
@@ -61,6 +72,8 @@ fun NamePrompt(
     initial: String,
     confirmLabel: String,
     onDismiss: () -> Unit,
+    /** Shows an "Add a checklist" tick box bound to this. */
+    checklist: MutableState<Boolean>? = null,
     onConfirm: (String) -> Unit,
 ) {
     var value by remember { mutableStateOf(TextFieldValue(initial, TextRange(0, initial.length))) }
@@ -70,18 +83,31 @@ fun NamePrompt(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            OutlinedTextField(
-                value = value,
-                onValueChange = { value = it },
-                label = { Text("Name") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Sentences,
-                    imeAction = ImeAction.Done,
-                ),
-                keyboardActions = KeyboardActions(onDone = { submit() }),
-                modifier = Modifier.focusRequester(focus),
-            )
+            Column {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        imeAction = ImeAction.Done,
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { submit() }),
+                    modifier = Modifier.focusRequester(focus),
+                )
+                if (checklist != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .padding(top = 8.dp)
+                            .toggleable(value = checklist.value, role = Role.Checkbox) { checklist.value = it },
+                    ) {
+                        Checkbox(checked = checklist.value, onCheckedChange = null)
+                        Text("Add a checklist", modifier = Modifier.padding(start = 8.dp, end = 8.dp))
+                    }
+                }
+            }
         },
         confirmButton = {
             TextButton(onClick = submit, enabled = value.text.isNotBlank()) { Text(confirmLabel) }

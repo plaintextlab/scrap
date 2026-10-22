@@ -62,6 +62,9 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
+    // Home-screen note widget.
+    implementation("androidx.glance:glance-appwidget:1.1.1")
+    implementation("androidx.glance:glance-material3:1.1.1")
     implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.30.0")
     // Images in notes: Coil loads them for the renderer (local files, plus web images).
     implementation("com.mikepenz:multiplatform-markdown-renderer-coil3:0.30.0")

@@ -531,6 +531,30 @@
         </activity-alias>
         <!-- END launcher aliases -->
 
+        <!-- Home-screen widget showing a note (widget/NoteWidget.kt). -->
+        <receiver
+            android:name=".widget.NoteWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/note_widget_info" />
+        </receiver>
+        <!-- Chooses the widget's note; the launcher starts it when the widget is placed. -->
+        <activity
+            android:name=".widget.NoteWidgetConfigActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="@string/widget_label"
+            android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
         <!-- Hands the camera app a file to write a photo into. -->
         <provider
             android:name="androidx.core.content.FileProvider"

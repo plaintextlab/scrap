@@ -11,6 +11,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import dev.plaintextlab.scrap.widget.NoteWidget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -68,7 +69,11 @@ object Sync {
             // A repository that isn't open is synced in its own folder, leaving the open one alone.
             .put("root", if (active) "" else Vault.dir(context, id).path)
         try {
-            Core.sync(config.toString()).also { store.recordSync(it, failed = false, id = id) }
+            Core.sync(config.toString()).also {
+                store.recordSync(it, failed = false, id = id)
+                // Pulled changes may be in a note on the home screen.
+                NoteWidget.refresh(context)
+            }
         } catch (e: IOException) {
             store.recordSync(e.message ?: "Sync failed", failed = true, id = id)
             throw e

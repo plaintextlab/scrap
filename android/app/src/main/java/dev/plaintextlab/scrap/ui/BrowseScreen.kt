@@ -46,6 +46,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,6 +72,13 @@ import dev.plaintextlab.scrap.titleOf
 fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState) {
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     var dialog by remember { mutableStateOf<NameDialog?>(null) }
+    // The widget's ＋ button.
+    LaunchedEffect(vm.newNoteRequested) {
+        if (vm.newNoteRequested) {
+            vm.newNoteRequested = false
+            dialog = NameDialog.NewNote(folder)
+        }
+    }
     var actionsFor by remember { mutableStateOf<String?>(null) }
     var deleting by remember { mutableStateOf<String?>(null) }
     var moving by remember { mutableStateOf<String?>(null) }
@@ -281,10 +289,10 @@ fun BrowseScreen(vm: VaultViewModel, folder: String, snackbar: SnackbarHostState
     }
 
     dialog?.let { d ->
-        NameDialogHost(d, onDismiss = { dialog = null }) { which, name ->
+        NameDialogHost(d, onDismiss = { dialog = null }) { which, name, checklist ->
             dialog = null
             when (which) {
-                is NameDialog.NewNote -> vm.createNote(which.folder, name)
+                is NameDialog.NewNote -> vm.createNote(which.folder, name, checklist)
                 is NameDialog.NewFolder -> vm.createFolder(which.parent, name)
                 is NameDialog.Rename -> vm.rename(which.rel, name)
             }

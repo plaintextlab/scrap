@@ -47,6 +47,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
+import dev.plaintextlab.scrap.Lists
 import java.io.File
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
@@ -93,6 +94,16 @@ fun Editor(text: String, onChange: (String) -> Unit, padding: PaddingValues, onA
         if (next.text != text) onChange(next.text)
     }
 
+    /** Typing: a newline typed in a list starts its next item (or ends it, on an empty one). */
+    fun typed(next: TextFieldValue) {
+        val at = value.selection.min
+        val newline = next.selection.collapsed && next.selection.start == at + 1 &&
+            next.text.length == value.text.length - value.selection.length + 1 &&
+            next.text.getOrNull(at) == '\n'
+        val continued = if (newline) Lists.continueList(next.text, at) else null
+        update(continued?.let { (t, cursor) -> TextFieldValue(t, TextRange(cursor)) } ?: next)
+    }
+
     fun insertImage(uri: Uri, cleanup: File? = null) {
         scope.launch {
             val markdown = onAddImage(uri)
@@ -133,7 +144,7 @@ fun Editor(text: String, onChange: (String) -> Unit, padding: PaddingValues, onA
     ) {
         BasicTextField(
             value = value,
-            onValueChange = { update(it) },
+            onValueChange = { typed(it) },
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
             cursorBrush = SolidColor(colors.primary),
             visualTransformation = highlight,

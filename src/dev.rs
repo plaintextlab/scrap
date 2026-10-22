@@ -5,7 +5,8 @@
 //! `search:<query>`, `page:trash|settings`, `theme:light|dark`, `move:<path>`,
 //! `delete:<path>`, `links`, `nosidebar`, `expand:<folder>`, `select:<from>-<to>`,
 //! `fmt:bold|italic|heading|list|check|undo|redo|nocolor|<colour name>`,
-//! `addimage:<file>`, `save`.
+//! `addimage:<file>`, `newnote:<name>` (the dialog, checklist ticked), `checklist:<name>`,
+//! `tick:<n>` (the nth checklist item, as a click in Read view does), `save`.
 
 use crate::app::{Action, App, Dialog, Page, SearchState, ThemeChoice, View};
 use crate::editor::Op;
@@ -100,6 +101,13 @@ impl App {
                 self.apply_theme();
             }
             "move" => self.dialog = Some(Dialog::Move { rel: arg.to_string() }),
+            "newnote" => {
+                self.dialog = Some(Dialog::NewNote { folder: String::new(), name: arg.to_string(), checklist: true })
+            }
+            "checklist" => {
+                self.submit(Dialog::NewNote { folder: String::new(), name: arg.to_string(), checklist: true })
+            }
+            "tick" => self.run(Action::Link(format!("task:{arg}"))),
             "delete" => self.submit(Dialog::Delete { rel: arg.to_string() }),
             "links" => self.s.show_links = true,
             "nosidebar" => self.s.show_sidebar = false,

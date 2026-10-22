@@ -7,6 +7,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.plaintextlab.scrap.widget.NoteWidget
+import dev.plaintextlab.scrap.widget.WidgetPrefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -62,6 +64,10 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
     var noteLoaded by mutableStateOf(false)
         private set
     var editing by mutableStateOf(false)
+    /** Open the next note loaded in the editor (a new checklist, the widget's ✏). */
+    private var editNext = false
+    /** The widget's ＋ was tapped: the browser shows the New note dialog. */
+    var newNoteRequested by mutableStateOf(false)
     private var savedText = ""
     private var saveJob: Job? = null
 
@@ -350,7 +356,8 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
                 noteText = text
                 savedText = text
                 noteLoaded = true
-                editing = text.isBlank() || settings.openInEdit
+                editing = editNext || text.isBlank() || settings.openInEdit
+                editNext = false
             }
         }
     }
@@ -376,16 +383,46 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
         savedText = text
         io { Core.save(rel, text) }
         unsynced = true
+        if (WidgetPrefs.shows(app, activeRepoId, rel)) NoteWidget.refresh(app)
         notes = notes.map { if (it.rel == rel) it.copy(modified = System.currentTimeMillis()) else it }
     }
 
     // ---- Vault operations -------------------------------------------------
 
-    fun createNote(folder: String, name: String) = launch {
-        val rel = io { Core.createNote(folder, name) }
+    fun createNote(folder: String, name: String, checklist: Boolean = false) = launch {
+        val rel = io {
+            Core.createNote(folder, name).also { if (checklist) Core.save(it, Lists.NEW_CHECKLIST) }
+        }
         unsynced = true
         reload()
+        editNext = checklist
         navigate(Screen.Note(rel))
+    }
+
+    /** The widget's title or ✏: opens its note (switching repository if needed), to read or edit. */
+    fun openFromWidget(repo: String, rel: String, edit: Boolean) = launch {
+        while (!ready) delay(50)
+        if (repo != activeRepoId && repos.any { it.id == repo }) switchTo(repo)
+        if (repo != activeRepoId) return@launch
+        stack.clear()
+        stack.add(Screen.Browse(parentOf(rel)))
+        if (noteRel == rel && noteLoaded) {
+            stack.add(Screen.Note(rel))
+            editing = edit
+        } else {
+            editNext = edit
+            navigate(Screen.Note(rel))
+        }
+    }
+
+    /** The widget's ＋: the notes list with the New note dialog open. */
+    fun newNoteFromWidget() = launch {
+        while (!ready) delay(50)
+        saveNow()
+        stack.clear()
+        stack.add(Screen.Browse(""))
+        onScreenChanged()
+        newNoteRequested = true
     }
 
     fun createFolder(parent: String, name: String) = launch {
@@ -426,6 +463,8 @@ class VaultViewModel(private val app: Application) : AndroidViewModel(app) {
     /** Points open screens at a note or folder's new path after a rename or move. */
     private suspend fun relocated(rel: String, newRel: String) {
         unsynced = true
+        WidgetPrefs.relocate(app, activeRepoId, rel, newRel)
+        NoteWidget.refresh(app)
         fun fix(p: String) = when {
             p == rel -> newRel
             p.startsWith("$rel/") -> newRel + p.removePrefix(rel)

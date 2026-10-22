@@ -135,7 +135,7 @@ private fun accents(p: Palette, dark: Boolean) =
     AccentColors(dark, p.red, p.green, p.yellow, p.blue, p.purple, p.aqua, p.orange, p.gray)
 
 /** Material 3 roles filled from a theme palette. */
-private fun scheme(p: Palette, dark: Boolean): ColorScheme {
+internal fun scheme(p: Palette, dark: Boolean): ColorScheme {
     val errorContainer = lerp(p.bg, p.red, if (dark) 0.3f else 0.2f)
     return if (dark) {
         darkColorScheme(
